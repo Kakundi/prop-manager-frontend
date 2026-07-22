@@ -8,6 +8,10 @@ export default function Dashboard() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Users Data (For Admin/Manager View)
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+
   // Sample State Data
   const [invoices, setInvoices] = useState<any[]>([]);
   const [phone, setPhone] = useState('');
@@ -43,7 +47,6 @@ export default function Dashboard() {
         if (data && !error) {
           setProfile(data as unknown as UserProfile);
 
-          // Prefill M-Pesa details if tenant record exists
           if (data.tenants) {
             setPhone(data.tenants.phone_number || data.phone_number || '');
             setAccountRef(data.tenants.account_number || data.tenants.house_number || '');
@@ -52,7 +55,6 @@ export default function Dashboard() {
           if (data.tenant_id) {
             fetchTenantInvoices(data.tenant_id);
           } else {
-            // Fallback: Fetch all active invoices if user is admin or unlinked
             fetchGeneralInvoices();
           }
         } else {
@@ -61,6 +63,10 @@ export default function Dashboard() {
       } else {
         setFallbackProfile();
       }
+
+      // Fetch all system users if Admin or Manager
+      fetchAllUsers();
+
     } catch (err) {
       setFallbackProfile();
     } finally {
@@ -69,7 +75,6 @@ export default function Dashboard() {
   }
 
   function setFallbackProfile() {
-    // Fallback profile for initial rendering or testing prior to auth login
     setProfile({
       id: 'demo-user',
       full_name: 'Brian Kakundi',
@@ -78,6 +83,33 @@ export default function Dashboard() {
       role: 'SUPER_ADMIN' as UserRole,
       created_at: new Date().toISOString(),
     });
+  }
+
+  async function fetchAllUsers() {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (data) setAllUsers(data as UserProfile[]);
+  }
+
+  async function handleRoleChange(userId: string, newRole: UserRole) {
+    setUpdatingRole(userId);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role: newRole })
+      .eq('id', userId);
+
+    if (!error) {
+      setAllUsers(prev =>
+        prev.map(u => (u.id === userId ? { ...u, role: newRole } : u))
+      );
+      if (profile && profile.id === userId) {
+        setProfile({ ...profile, role: newRole });
+      }
+    }
+    setUpdatingRole(null);
   }
 
   async function fetchTenantInvoices(tenantId: string) {
@@ -102,7 +134,6 @@ export default function Dashboard() {
     if (data) setInvoices(data);
   }
 
-  // Trigger M-Pesa STK Push via n8n Webhook
   async function triggerMpesaPayment(e: React.FormEvent) {
     e.preventDefault();
     setStkStatus('Initiating M-Pesa Prompt...');
@@ -140,35 +171,18 @@ export default function Dashboard() {
         </div>
 
         <nav className="space-y-2 flex-1">
-          {profile?.role === 'SUPER_ADMIN' && (
+          {['SUPER_ADMIN', 'PROPERTY_MANAGER', 'LANDLORD'].includes(profile?.role || '') && (
             <>
-              <a href="#subscriptions" className="block p-2 rounded hover:bg-slate-800">Subscriptions</a>
-              <a href="#managers" className="block p-2 rounded hover:bg-slate-800">Property Managers</a>
-              <a href="#system" className="block p-2 rounded hover:bg-slate-800">System Logs</a>
-            </>
-          )}
-
-          {profile?.role === 'LANDLORD' && (
-            <>
-              <a href="#portfolio" className="block p-2 rounded hover:bg-slate-800">Portfolio Overview</a>
-              <a href="#occupancy" className="block p-2 rounded hover:bg-slate-800">Occupancy Rates</a>
-              <a href="#payouts" className="block p-2 rounded hover:bg-slate-800">Financial Payouts</a>
-            </>
-          )}
-
-          {profile?.role === 'PROPERTY_MANAGER' && (
-            <>
-              <a href="#units" className="block p-2 rounded hover:bg-slate-800">Units & Tenants</a>
-              <a href="#billing" className="block p-2 rounded hover:bg-slate-800">Monthly Billing</a>
-              <a href="#reconciliation" className="block p-2 rounded hover:bg-slate-800">M-Pesa Reconciliation</a>
+              <a href="#users" className="block p-2 rounded hover:bg-slate-800 text-blue-300 font-medium">User Management</a>
+              <a href="#portfolio" className="block p-2 rounded hover:bg-slate-800">Properties & Units</a>
+              <a href="#reconciliation" className="block p-2 rounded hover:bg-slate-800">M-Pesa Ledger</a>
             </>
           )}
 
           {profile?.role === 'CARETAKER' && (
             <>
               <a href="#inspections" className="block p-2 rounded hover:bg-slate-800">Unit Inspections</a>
-              <a href="#meters" className="block p-2 rounded hover:bg-slate-800">Water Meter Readings</a>
-              <a href="#tickets" className="block p-2 rounded hover:bg-slate-800">Maintenance Requests</a>
+              <a href="#meters" className="block p-2 rounded hover:bg-slate-800">Water Meters</a>
             </>
           )}
 
@@ -176,18 +190,18 @@ export default function Dashboard() {
             <>
               <a href="#invoices" className="block p-2 rounded hover:bg-slate-800">My Invoices</a>
               <a href="#pay" className="block p-2 rounded hover:bg-slate-800">Pay via M-Pesa</a>
-              <a href="#tickets" className="block p-2 rounded hover:bg-slate-800">Repair Tickets</a>
             </>
           )}
         </nav>
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 p-8 overflow-y-auto">
-        <header className="flex justify-between items-center mb-8 bg-white p-4 rounded shadow-sm">
-          <h2 className="text-2xl font-bold text-gray-800">
-            Welcome, {profile?.full_name || 'User'}
-          </h2>
+      <main className="flex-1 p-8 overflow-y-auto space-y-8">
+        <header className="flex justify-between items-center bg-white p-4 rounded shadow-sm">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Welcome, {profile?.full_name || 'User'}</h2>
+            <p className="text-xs text-gray-500">SaaS Portal • {profile?.role}</p>
+          </div>
           <button 
             onClick={() => supabase.auth.signOut()} 
             className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700"
@@ -196,12 +210,96 @@ export default function Dashboard() {
           </button>
         </header>
 
-        {/* Dynamic Views According to Role */}
+        {/* 1. USER ROLES MANAGEMENT TABLE (ADMIN/MANAGER VIEW) */}
+        {['SUPER_ADMIN', 'PROPERTY_MANAGER', 'LANDLORD'].includes(profile?.role || '') && (
+          <div className="bg-white p-6 rounded shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">System Users & Role Management</h3>
+                <p className="text-xs text-gray-500">View registered users and modify permissions in real-time.</p>
+              </div>
+              <span className="text-xs bg-slate-100 text-slate-700 font-semibold px-2.5 py-1 rounded">
+                Total Users: {allUsers.length}
+              </span>
+            </div>
 
-        {/* 1. TENANT VIEW */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50 text-gray-600">
+                    <th className="p-3">Full Name</th>
+                    <th className="p-3">Email</th>
+                    <th className="p-3">Phone</th>
+                    <th className="p-3">Current Role</th>
+                    <th className="p-3">Action (Change Role)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-4 text-center text-gray-500">No users found in database.</td>
+                    </tr>
+                  ) : (
+                    allUsers.map((u) => (
+                      <tr key={u.id} className="border-b hover:bg-gray-50">
+                        <td className="p-3 font-semibold text-gray-800">{u.full_name}</td>
+                        <td className="p-3 text-gray-600">{u.email}</td>
+                        <td className="p-3 text-gray-600">{u.phone_number || 'N/A'}</td>
+                        <td className="p-3">
+                          <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${
+                            u.role === 'SUPER_ADMIN' ? 'bg-purple-100 text-purple-800' :
+                            u.role === 'LANDLORD' ? 'bg-blue-100 text-blue-800' :
+                            u.role === 'PROPERTY_MANAGER' ? 'bg-indigo-100 text-indigo-800' :
+                            u.role === 'CARETAKER' ? 'bg-amber-100 text-amber-800' :
+                            'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <select
+                            value={u.role}
+                            disabled={updatingRole === u.id}
+                            onChange={(e) => handleRoleChange(u.id, e.target.value as UserRole)}
+                            className="p-1.5 border rounded text-xs bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                            <option value="LANDLORD">LANDLORD</option>
+                            <option value="PROPERTY_MANAGER">PROPERTY_MANAGER</option>
+                            <option value="CARETAKER">CARETAKER</option>
+                            <option value="TENANT">TENANT</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 2. OVERVIEW METRICS */}
+        {['PROPERTY_MANAGER', 'LANDLORD', 'SUPER_ADMIN'].includes(profile?.role || '') && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-blue-500">
+              <h4 className="text-sm font-bold text-gray-500">Total Properties</h4>
+              <p className="text-3xl font-bold mt-2 text-gray-800">12</p>
+            </div>
+            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-emerald-500">
+              <h4 className="text-sm font-bold text-gray-500">Occupancy Rate</h4>
+              <p className="text-3xl font-bold mt-2 text-gray-800">94%</p>
+            </div>
+            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-amber-500">
+              <h4 className="text-sm font-bold text-gray-500">Total Collected (This Month)</h4>
+              <p className="text-3xl font-bold mt-2 text-gray-800">KES 1,240,000</p>
+            </div>
+          </div>
+        )}
+
+        {/* 3. TENANT VIEW */}
         {profile?.role === 'TENANT' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Active Invoices */}
             <div className="bg-white p-6 rounded shadow-sm">
               <h3 className="text-lg font-semibold mb-4">Your Invoices</h3>
               {invoices.length === 0 ? (
@@ -224,7 +322,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Pay via M-Pesa Prompt */}
             <div className="bg-white p-6 rounded shadow-sm">
               <h3 className="text-lg font-semibold mb-4">Pay Rent via M-Pesa</h3>
               <form onSubmit={triggerMpesaPayment} className="space-y-4">
@@ -266,36 +363,6 @@ export default function Dashboard() {
                 </button>
               </form>
               {stkStatus && <p className="mt-4 text-sm text-blue-600 font-medium">{stkStatus}</p>}
-            </div>
-          </div>
-        )}
-
-        {/* 2. CARETAKER VIEW */}
-        {profile?.role === 'CARETAKER' && (
-          <div className="bg-white p-6 rounded shadow-sm">
-            <h3 className="text-lg font-semibold mb-4">Record Water Meter Reading</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <input type="text" placeholder="House Number (e.g. A102)" className="p-2 border rounded" />
-              <input type="number" placeholder="Current Meter Units" className="p-2 border rounded" />
-              <button className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700">Submit Reading</button>
-            </div>
-          </div>
-        )}
-
-        {/* 3. PROPERTY MANAGER & LANDLORD & SUPER ADMIN VIEWS */}
-        {['PROPERTY_MANAGER', 'LANDLORD', 'SUPER_ADMIN'].includes(profile?.role || '') && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-blue-500">
-              <h4 className="text-sm font-bold text-gray-500">Total Properties</h4>
-              <p className="text-3xl font-bold mt-2">12</p>
-            </div>
-            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-emerald-500">
-              <h4 className="text-sm font-bold text-gray-500">Occupancy Rate</h4>
-              <p className="text-3xl font-bold mt-2">94%</p>
-            </div>
-            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-amber-500">
-              <h4 className="text-sm font-bold text-gray-500">Total Collected (This Month)</h4>
-              <p className="text-3xl font-bold mt-2">KES 1,240,000</p>
             </div>
           </div>
         )}
