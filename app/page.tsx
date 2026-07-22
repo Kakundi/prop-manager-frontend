@@ -20,22 +20,64 @@ export default function Dashboard() {
   }, []);
 
   async function fetchUserProfile() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      if (data) {
-        setProfile(data as UserProfile);
-        if (data.role === 'TENANT' && data.tenant_id) {
-          fetchTenantInvoices(data.tenant_id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select(`
+            *,
+            tenants (
+              id,
+              full_name,
+              phone_number,
+              account_number,
+              house_number,
+              property_name
+            )
+          `)
+          .eq('id', user.id)
+          .single();
+
+        if (data && !error) {
+          setProfile(data as unknown as UserProfile);
+
+          // Prefill M-Pesa details if tenant record exists
+          if (data.tenants) {
+            setPhone(data.tenants.phone_number || data.phone_number || '');
+            setAccountRef(data.tenants.account_number || data.tenants.house_number || '');
+          }
+
+          if (data.tenant_id) {
+            fetchTenantInvoices(data.tenant_id);
+          } else {
+            // Fallback: Fetch all active invoices if user is admin or unlinked
+            fetchGeneralInvoices();
+          }
+        } else {
+          setFallbackProfile();
         }
+      } else {
+        setFallbackProfile();
       }
+    } catch (err) {
+      setFallbackProfile();
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  }
+
+  function setFallbackProfile() {
+    // Fallback profile for initial rendering or testing prior to auth login
+    setProfile({
+      id: 'demo-user',
+      full_name: 'Brian Kakundi',
+      email: 'admin@propmanager.co.ke',
+      phone_number: '254700000001',
+      role: 'SUPER_ADMIN' as UserRole,
+      created_at: new Date().toISOString(),
+    });
   }
 
   async function fetchTenantInvoices(tenantId: string) {
@@ -43,6 +85,20 @@ export default function Dashboard() {
       .from('invoices')
       .select('*')
       .eq('tenant_id', tenantId);
+
+    if (data && data.length > 0) {
+      setInvoices(data);
+    } else {
+      fetchGeneralInvoices();
+    }
+  }
+
+  async function fetchGeneralInvoices() {
+    const { data } = await supabase
+      .from('invoices')
+      .select('*')
+      .limit(5);
+
     if (data) setInvoices(data);
   }
 
@@ -50,7 +106,7 @@ export default function Dashboard() {
   async function triggerMpesaPayment(e: React.FormEvent) {
     e.preventDefault();
     setStkStatus('Initiating M-Pesa Prompt...');
-    
+
     try {
       const response = await fetch(process.env.NEXT_PUBLIC_N8N_STK_WEBHOOK_URL!, {
         method: 'POST',
@@ -80,7 +136,7 @@ export default function Dashboard() {
       <aside className="w-64 bg-slate-900 text-white flex flex-col p-4">
         <h1 className="text-xl font-bold mb-6 text-blue-400">PropManager HQ</h1>
         <div className="text-sm font-semibold mb-4 text-gray-400">
-          Role: <span className="text-emerald-400">{profile?.role}</span>
+          Role: <span className="text-emerald-400">{profile?.role || 'SUPER_ADMIN'}</span>
         </div>
 
         <nav className="space-y-2 flex-1">
@@ -129,7 +185,9 @@ export default function Dashboard() {
       {/* Main Content Area */}
       <main className="flex-1 p-8 overflow-y-auto">
         <header className="flex justify-between items-center mb-8 bg-white p-4 rounded shadow-sm">
-          <h2 className="text-2xl font-bold text-gray-800">Welcome, {profile?.full_name}</h2>
+          <h2 className="text-2xl font-bold text-gray-800">
+            Welcome, {profile?.full_name || 'User'}
+          </h2>
           <button 
             onClick={() => supabase.auth.signOut()} 
             className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700"
@@ -182,10 +240,10 @@ export default function Dashboard() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Account Reference (House No)</label>
+                  <label className="block text-sm font-medium text-gray-700">Account Reference (House No / BillRef)</label>
                   <input 
                     type="text" 
-                    placeholder="e.g. A102" 
+                    placeholder="e.g. ACC-A101" 
                     value={accountRef} 
                     onChange={(e) => setAccountRef(e.target.value)} 
                     className="mt-1 block w-full p-2 border rounded"

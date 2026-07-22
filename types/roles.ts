@@ -10,5 +10,7 @@ export interface UserProfile {
   full_name: string;
   email: string;
   role: UserRole;
+  phone_number?: string;
+  created_at?: string;
   tenant_id?: string;
 }
