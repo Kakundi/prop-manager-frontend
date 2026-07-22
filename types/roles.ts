@@ -14,3 +14,11 @@ export interface UserProfile {
   created_at?: string;
   tenant_id?: string;
 }
+
+export interface Property {
+  id: string;
+  name: string;
+  location: string;
+  landlord_id?: string;
+  created_at?: string;
+}

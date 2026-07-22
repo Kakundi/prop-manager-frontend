@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { UserRole, UserProfile } from '@/types/roles';
+import { UserRole, UserProfile, Property } from '@/types/roles';
 
 export default function Dashboard() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -11,6 +11,12 @@ export default function Dashboard() {
   // Users Data (For Admin/Manager View)
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+
+  // Properties Data
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [newPropertyName, setNewPropertyName] = useState('');
+  const [newPropertyLocation, setNewPropertyLocation] = useState('');
+  const [isAddingProperty, setIsAddingProperty] = useState(false);
 
   // Sample State Data
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -64,8 +70,9 @@ export default function Dashboard() {
         setFallbackProfile();
       }
 
-      // Fetch all system users if Admin or Manager
+      // Fetch users and properties for managers/admins
       fetchAllUsers();
+      fetchProperties();
 
     } catch (err) {
       setFallbackProfile();
@@ -92,6 +99,39 @@ export default function Dashboard() {
       .order('created_at', { ascending: false });
 
     if (data) setAllUsers(data as UserProfile[]);
+  }
+
+  async function fetchProperties() {
+    const { data } = await supabase
+      .from('properties')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (data) setProperties(data as Property[]);
+  }
+
+  async function handleAddProperty(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newPropertyName) return;
+
+    setIsAddingProperty(true);
+    const { data, error } = await supabase
+      .from('properties')
+      .insert([
+        {
+          name: newPropertyName,
+          location: newPropertyLocation,
+          landlord_id: profile?.id !== 'demo-user' ? profile?.id : null
+        }
+      ])
+      .select();
+
+    if (!error && data) {
+      setProperties(prev => [data[0] as Property, ...prev]);
+      setNewPropertyName('');
+      setNewPropertyLocation('');
+    }
+    setIsAddingProperty(false);
   }
 
   async function handleRoleChange(userId: string, newRole: UserRole) {
@@ -173,8 +213,8 @@ export default function Dashboard() {
         <nav className="space-y-2 flex-1">
           {['SUPER_ADMIN', 'PROPERTY_MANAGER', 'LANDLORD'].includes(profile?.role || '') && (
             <>
-              <a href="#users" className="block p-2 rounded hover:bg-slate-800 text-blue-300 font-medium">User Management</a>
-              <a href="#portfolio" className="block p-2 rounded hover:bg-slate-800">Properties & Units</a>
+              <a href="#portfolio" className="block p-2 rounded hover:bg-slate-800 text-blue-300 font-medium">Properties & Units</a>
+              <a href="#users" className="block p-2 rounded hover:bg-slate-800">User Management</a>
               <a href="#reconciliation" className="block p-2 rounded hover:bg-slate-800">M-Pesa Ledger</a>
             </>
           )}
@@ -210,7 +250,82 @@ export default function Dashboard() {
           </button>
         </header>
 
-        {/* 1. USER ROLES MANAGEMENT TABLE (ADMIN/MANAGER VIEW) */}
+        {/* 1. OVERVIEW METRICS */}
+        {['PROPERTY_MANAGER', 'LANDLORD', 'SUPER_ADMIN'].includes(profile?.role || '') && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-blue-500">
+              <h4 className="text-sm font-bold text-gray-500">Total Properties</h4>
+              <p className="text-3xl font-bold mt-2 text-gray-800">{properties.length}</p>
+            </div>
+            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-emerald-500">
+              <h4 className="text-sm font-bold text-gray-500">Occupancy Rate</h4>
+              <p className="text-3xl font-bold mt-2 text-gray-800">94%</p>
+            </div>
+            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-amber-500">
+              <h4 className="text-sm font-bold text-gray-500">Total Collected (This Month)</h4>
+              <p className="text-3xl font-bold mt-2 text-gray-800">KES 1,240,000</p>
+            </div>
+          </div>
+        )}
+
+        {/* 2. PROPERTIES PORTFOLIO MANAGEMENT */}
+        {['SUPER_ADMIN', 'PROPERTY_MANAGER', 'LANDLORD'].includes(profile?.role || '') && (
+          <div className="bg-white p-6 rounded shadow-sm space-y-6">
+            <div className="flex justify-between items-center border-b pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Managed Properties</h3>
+                <p className="text-xs text-gray-500">Active real estate portfolio registered in Supabase</p>
+              </div>
+            </div>
+
+            {/* Add Property Form */}
+            <form onSubmit={handleAddProperty} className="flex flex-col md:flex-row gap-4 bg-gray-50 p-4 rounded-md">
+              <input
+                type="text"
+                placeholder="Property Name (e.g. Sunrise Apartments)"
+                value={newPropertyName}
+                onChange={(e) => setNewPropertyName(e.target.value)}
+                className="flex-1 p-2 border rounded text-sm bg-white"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Location (e.g. Kilimani, Nairobi)"
+                value={newPropertyLocation}
+                onChange={(e) => setNewPropertyLocation(e.target.value)}
+                className="flex-1 p-2 border rounded text-sm bg-white"
+                required
+              />
+              <button
+                type="submit"
+                disabled={isAddingProperty}
+                className="px-4 py-2 bg-blue-600 text-white font-semibold rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isAddingProperty ? 'Adding...' : '+ Add Property'}
+              </button>
+            </form>
+
+            {/* Properties List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {properties.length === 0 ? (
+                <p className="text-gray-500 text-sm">No properties registered yet.</p>
+              ) : (
+                properties.map((prop) => (
+                  <div key={prop.id} className="border p-4 rounded-lg bg-gray-50 hover:border-blue-300 transition-all">
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-bold text-gray-800">{prop.name}</h4>
+                      <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">Active</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">📍 {prop.location || 'Location not specified'}</p>
+                    <div className="text-[11px] text-gray-400 font-mono">ID: {prop.id.slice(0, 8)}...</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 3. USER ROLES MANAGEMENT TABLE */}
         {['SUPER_ADMIN', 'PROPERTY_MANAGER', 'LANDLORD'].includes(profile?.role || '') && (
           <div className="bg-white p-6 rounded shadow-sm">
             <div className="flex justify-between items-center mb-4">
@@ -279,25 +394,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* 2. OVERVIEW METRICS */}
-        {['PROPERTY_MANAGER', 'LANDLORD', 'SUPER_ADMIN'].includes(profile?.role || '') && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-blue-500">
-              <h4 className="text-sm font-bold text-gray-500">Total Properties</h4>
-              <p className="text-3xl font-bold mt-2 text-gray-800">12</p>
-            </div>
-            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-emerald-500">
-              <h4 className="text-sm font-bold text-gray-500">Occupancy Rate</h4>
-              <p className="text-3xl font-bold mt-2 text-gray-800">94%</p>
-            </div>
-            <div className="bg-white p-6 rounded shadow-sm border-l-4 border-amber-500">
-              <h4 className="text-sm font-bold text-gray-500">Total Collected (This Month)</h4>
-              <p className="text-3xl font-bold mt-2 text-gray-800">KES 1,240,000</p>
-            </div>
-          </div>
-        )}
-
-        {/* 3. TENANT VIEW */}
+        {/* 4. TENANT VIEW */}
         {profile?.role === 'TENANT' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="bg-white p-6 rounded shadow-sm">
