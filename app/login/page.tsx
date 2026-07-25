@@ -14,15 +14,15 @@ export default function LoginPage() {
   async function handleDemoLogin(demoEmail: string, roleName: string, fullName: string) {
     setEmail(demoEmail);
     setPassword('Password123!');
-    await executeSmartAuth(demoEmail, 'Password123!', roleName, fullName);
+    await executeAuth(demoEmail, 'Password123!', roleName, fullName);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await executeSmartAuth(email, password, 'TENANT', 'Demo User');
+    await executeAuth(email, password, 'TENANT', 'Demo User');
   }
 
-  async function executeSmartAuth(
+  async function executeAuth(
     loginEmail: string,
     loginPass: string,
     roleName: string = 'TENANT',
@@ -31,70 +31,73 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMessage(null);
 
-    // 1. First attempt: Standard Sign In
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: loginEmail,
-      password: loginPass,
-    });
-
-    if (!signInError && signInData.session) {
-      router.push('/');
-      return;
-    }
-
-    // 2. Second attempt: Native Sign Up if account doesn't exist
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email: loginEmail,
-      password: loginPass,
-      options: {
-        data: {
-          full_name: fullName,
-          role: roleName,
-        },
-      },
-    });
-
-    if (signUpError) {
-      setErrorMessage(signUpError.message);
-      setLoading(false);
-      return;
-    }
-
-    // 3. Ensure profile record exists in public.profiles table
-    if (signUpData.user) {
-      await supabase.from('profiles').upsert({
-        id: signUpData.user.id,
-        email: loginEmail,
-        full_name: fullName,
-        role: roleName,
-      });
-    }
-
-    if (signUpData.session) {
-      router.push('/');
-    } else {
-      // If email confirmation is enabled in Supabase, sign in one last time
-      const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+    try {
+      // 1. Attempt Sign In
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: loginEmail,
         password: loginPass,
       });
 
-      if (retryData?.session) {
+      if (!signInError && signInData?.session) {
+        router.push('/');
+        return;
+      }
+
+      // 2. Fallback: Attempt Sign Up if user not found / hash mismatch
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: loginEmail,
+        password: loginPass,
+        options: {
+          data: {
+            full_name: fullName,
+            role: roleName,
+          },
+        },
+      });
+
+      if (signUpError) {
+        const msg = signUpError.message || JSON.stringify(signUpError);
+        setErrorMessage(msg !== '{}' ? msg : 'Authentication failed. Please check network or Supabase config.');
+        setLoading(false);
+        return;
+      }
+
+      // 3. Upsert Profile
+      if (signUpData?.user) {
+        await supabase.from('profiles').upsert({
+          id: signUpData.user.id,
+          email: loginEmail,
+          full_name: fullName,
+          role: roleName,
+        });
+      }
+
+      if (signUpData?.session) {
         router.push('/');
       } else {
-        setErrorMessage(
-          retryError?.message || 'Account created! If required, please confirm email or check Supabase Auth settings.'
-        );
-        setLoading(false);
+        // Retry one last sign-in
+        const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: loginPass,
+        });
+
+        if (retryData?.session) {
+          router.push('/');
+        } else {
+          const retryMsg = retryError?.message || 'Check email verification settings in Supabase.';
+          setErrorMessage(retryMsg);
+          setLoading(false);
+        }
       }
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Unexpected network error occurred.');
+      setLoading(false);
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-center items-center p-4">
-      {/* ------------------------------------------------------------------- */}
-      {/* 1-CLICK QUICK DEMO SWITCHER BAR                                    */}
-      {/* ------------------------------------------------------------------- */}
+      {/* 1-CLICK QUICK DEMO SWITCHER BAR */}
       <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 shadow-xl">
         <div className="flex justify-between items-center mb-3">
           <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
@@ -144,9 +147,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ------------------------------------------------------------------- */}
-      {/* NATIVE SUPABASE EMAIL / PASSWORD LOGIN FORM                        */}
-      {/* ------------------------------------------------------------------- */}
+      {/* LOGIN FORM */}
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-blue-400">PropManager HQ</h1>
@@ -195,7 +196,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full py-3 bg-blue-600 hover:bg-blue-500 font-bold rounded text-white transition disabled:opacity-50"
           >
-            {loading ? 'Authenticating & Verifying RLS...' : 'Sign In to Dashboard'}
+            {loading ? 'Authenticating...' : 'Sign In to Dashboard'}
           </button>
         </form>
       </div>
