@@ -11,23 +11,27 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Helper to trigger fast demo logins during presentations
-  async function handleDemoLogin(demoEmail: string, roleName: string) {
+  async function handleDemoLogin(demoEmail: string, roleName: string, fullName: string) {
     setEmail(demoEmail);
     setPassword('Password123!');
-    await executeLogin(demoEmail, 'Password123!', roleName);
+    await executeSmartAuth(demoEmail, 'Password123!', roleName, fullName);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await executeLogin(email, password);
+    await executeSmartAuth(email, password, 'TENANT', 'Demo User');
   }
 
-  async function executeLogin(loginEmail: string, loginPass: string, defaultRole = 'USER') {
+  async function executeSmartAuth(
+    loginEmail: string,
+    loginPass: string,
+    roleName: string = 'TENANT',
+    fullName: string = 'Demo User'
+  ) {
     setLoading(true);
     setErrorMessage(null);
 
-    // 1. Try signing in directly
+    // 1. First attempt: Standard Sign In
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: loginEmail,
       password: loginPass,
@@ -38,41 +42,50 @@ export default function LoginPage() {
       return;
     }
 
-    // 2. Fallback: If credentials fail or user hash mismatch occurs, auto sign-up/re-authenticate
-    console.warn('Sign-in failed. Attempting Fallback Auth/Sign-Up...', signInError?.message);
-
+    // 2. Second attempt: Native Sign Up if account doesn't exist
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: loginEmail,
       password: loginPass,
       options: {
         data: {
-          full_name: `${defaultRole} Demo Account`,
-          role: defaultRole,
+          full_name: fullName,
+          role: roleName,
         },
       },
     });
 
     if (signUpError) {
-      setErrorMessage(`Authentication Error: ${signInError?.message || signUpError.message}`);
+      setErrorMessage(signUpError.message);
       setLoading(false);
       return;
     }
 
-    // If session was created via fallback sign-up
+    // 3. Ensure profile record exists in public.profiles table
+    if (signUpData.user) {
+      await supabase.from('profiles').upsert({
+        id: signUpData.user.id,
+        email: loginEmail,
+        full_name: fullName,
+        role: roleName,
+      });
+    }
+
     if (signUpData.session) {
       router.push('/');
     } else {
-      // Re-try one last sign in check if email confirmation is disabled
+      // If email confirmation is enabled in Supabase, sign in one last time
       const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
         email: loginEmail,
         password: loginPass,
       });
 
-      if (retryError) {
-        setErrorMessage(retryError.message);
-        setLoading(false);
-      } else if (retryData.session) {
+      if (retryData?.session) {
         router.push('/');
+      } else {
+        setErrorMessage(
+          retryError?.message || 'Account created! If required, please confirm email or check Supabase Auth settings.'
+        );
+        setLoading(false);
       }
     }
   }
@@ -95,35 +108,35 @@ export default function LoginPage() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
           <button
             type="button"
-            onClick={() => handleDemoLogin('admin@demo.com', 'SUPER_ADMIN')}
+            onClick={() => handleDemoLogin('admin@demo.com', 'SUPER_ADMIN', 'Chief System Admin')}
             className="p-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded text-purple-200 font-semibold transition"
           >
             Super Admin
           </button>
           <button
             type="button"
-            onClick={() => handleDemoLogin('landlord1@demo.com', 'LANDLORD')}
+            onClick={() => handleDemoLogin('landlord1@demo.com', 'LANDLORD', 'Dr. Peter Ndegwa')}
             className="p-2 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/50 rounded text-blue-200 font-semibold transition"
           >
             Landlord
           </button>
           <button
             type="button"
-            onClick={() => handleDemoLogin('manager1@demo.com', 'PROPERTY_MANAGER')}
+            onClick={() => handleDemoLogin('manager1@demo.com', 'PROPERTY_MANAGER', 'David Ochieng')}
             className="p-2 bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-700/50 rounded text-indigo-200 font-semibold transition"
           >
             Property Mgr
           </button>
           <button
             type="button"
-            onClick={() => handleDemoLogin('caretaker1@demo.com', 'CARETAKER')}
+            onClick={() => handleDemoLogin('caretaker1@demo.com', 'CARETAKER', 'Samuel Otieno')}
             className="p-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded text-amber-200 font-semibold transition"
           >
             Caretaker
           </button>
           <button
             type="button"
-            onClick={() => handleDemoLogin('tenant1@demo.com', 'TENANT')}
+            onClick={() => handleDemoLogin('tenant1@demo.com', 'TENANT', 'Brian Kakundi')}
             className="p-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded text-emerald-200 font-semibold transition col-span-2 md:col-span-1"
           >
             Tenant (A101)
