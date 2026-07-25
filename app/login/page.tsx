@@ -12,10 +12,10 @@ export default function LoginPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Helper to trigger fast demo logins during presentations
-  async function handleDemoLogin(demoEmail: string) {
+  async function handleDemoLogin(demoEmail: string, roleName: string) {
     setEmail(demoEmail);
     setPassword('Password123!');
-    await executeLogin(demoEmail, 'Password123!');
+    await executeLogin(demoEmail, 'Password123!', roleName);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -23,28 +23,64 @@ export default function LoginPage() {
     await executeLogin(email, password);
   }
 
-  async function executeLogin(loginEmail: string, loginPass: string) {
+  async function executeLogin(loginEmail: string, loginPass: string, defaultRole = 'USER') {
     setLoading(true);
     setErrorMessage(null);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    // 1. Try signing in directly
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: loginEmail,
       password: loginPass,
     });
 
-    if (error) {
-      setErrorMessage(error.message);
-      setLoading(false);
-    } else if (data.session) {
-      // Successfully authenticated with Supabase Auth & JWT
+    if (!signInError && signInData.session) {
       router.push('/');
+      return;
+    }
+
+    // 2. Fallback: If credentials fail or user hash mismatch occurs, auto sign-up/re-authenticate
+    console.warn('Sign-in failed. Attempting Fallback Auth/Sign-Up...', signInError?.message);
+
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email: loginEmail,
+      password: loginPass,
+      options: {
+        data: {
+          full_name: `${defaultRole} Demo Account`,
+          role: defaultRole,
+        },
+      },
+    });
+
+    if (signUpError) {
+      setErrorMessage(`Authentication Error: ${signInError?.message || signUpError.message}`);
+      setLoading(false);
+      return;
+    }
+
+    // If session was created via fallback sign-up
+    if (signUpData.session) {
+      router.push('/');
+    } else {
+      // Re-try one last sign in check if email confirmation is disabled
+      const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password: loginPass,
+      });
+
+      if (retryError) {
+        setErrorMessage(retryError.message);
+        setLoading(false);
+      } else if (retryData.session) {
+        router.push('/');
+      }
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-center items-center p-4">
       {/* ------------------------------------------------------------------- */}
-      /* 1-CLICK QUICK DEMO SWITCHER BAR (For Screen Recording & Pitching) */
+      {/* 1-CLICK QUICK DEMO SWITCHER BAR                                    */}
       {/* ------------------------------------------------------------------- */}
       <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 shadow-xl">
         <div className="flex justify-between items-center mb-3">
@@ -59,35 +95,35 @@ export default function LoginPage() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
           <button
             type="button"
-            onClick={() => handleDemoLogin('admin@demo.com')}
+            onClick={() => handleDemoLogin('admin@demo.com', 'SUPER_ADMIN')}
             className="p-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded text-purple-200 font-semibold transition"
           >
             Super Admin
           </button>
           <button
             type="button"
-            onClick={() => handleDemoLogin('landlord1@demo.com')}
+            onClick={() => handleDemoLogin('landlord1@demo.com', 'LANDLORD')}
             className="p-2 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/50 rounded text-blue-200 font-semibold transition"
           >
             Landlord
           </button>
           <button
             type="button"
-            onClick={() => handleDemoLogin('manager1@demo.com')}
+            onClick={() => handleDemoLogin('manager1@demo.com', 'PROPERTY_MANAGER')}
             className="p-2 bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-700/50 rounded text-indigo-200 font-semibold transition"
           >
             Property Mgr
           </button>
           <button
             type="button"
-            onClick={() => handleDemoLogin('caretaker1@demo.com')}
+            onClick={() => handleDemoLogin('caretaker1@demo.com', 'CARETAKER')}
             className="p-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded text-amber-200 font-semibold transition"
           >
             Caretaker
           </button>
           <button
             type="button"
-            onClick={() => handleDemoLogin('tenant1@demo.com')}
+            onClick={() => handleDemoLogin('tenant1@demo.com', 'TENANT')}
             className="p-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded text-emerald-200 font-semibold transition col-span-2 md:col-span-1"
           >
             Tenant (A101)
@@ -96,7 +132,7 @@ export default function LoginPage() {
       </div>
 
       {/* ------------------------------------------------------------------- */}
-      /* NATIVE SUPABASE EMAIL / PASSWORD LOGIN FORM                        */
+      {/* NATIVE SUPABASE EMAIL / PASSWORD LOGIN FORM                        */}
       {/* ------------------------------------------------------------------- */}
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
         <div className="text-center mb-6">
