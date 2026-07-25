@@ -1,155 +1,302 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import {
+  PhoneCall,
+  Building,
+  User,
+  ShieldCheck,
+  FileText,
+  CreditCard,
+  LogOut,
+  Users,
+  DollarSign,
+  AlertCircle
+} from 'lucide-react';
 
-export default function LoginPage() {
+interface Profile {
+  id: string;
+  full_name: string;
+  email: string;
+  role: 'SUPER_ADMIN' | 'LANDLORD' | 'PROPERTY_MANAGER' | 'CARETAKER' | 'TENANT';
+  tenant_id?: string;
+}
+
+interface Property {
+  id: string;
+  name: string;
+  location: string;
+  caretaker_name?: string;
+  caretaker_phone?: string;
+}
+
+export default function DashboardPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Helper to trigger fast demo logins during presentations
-  async function handleDemoLogin(demoEmail: string) {
-    setEmail(demoEmail);
-    setPassword('Password123!');
-    await executeLogin(demoEmail, 'Password123!');
-  }
+  useEffect(() => {
+    async function loadUserData() {
+      const { data: { session } } = await supabase.auth.getSession();
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    await executeLogin(email, password);
-  }
+      if (!session) {
+        router.push('/login');
+        return;
+      }
 
-  async function executeLogin(loginEmail: string, loginPass: string) {
-    setLoading(true);
-    setErrorMessage(null);
+      // Fetch Profile
+      const { data: profileData, error: profileErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: loginEmail,
-      password: loginPass,
-    });
+      if (profileErr || !profileData) {
+        console.error('Error fetching profile:', profileErr);
+        setLoading(false);
+        return;
+      }
 
-    if (error) {
-      setErrorMessage(error.message);
+      setProfile(profileData);
+
+      // Fetch Properties accessible to this user via RLS
+      const { data: propertyData } = await supabase
+        .from('properties')
+        .select('*');
+
+      if (propertyData) {
+        setProperties(propertyData);
+      }
+
       setLoading(false);
-    } else if (data.session) {
-      // Successfully authenticated with Supabase Auth & JWT
-      router.push('/');
     }
+
+    loadUserData();
+  }, [router]);
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-sm text-slate-400">Loading Dashboard & RLS Context...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-center items-center p-4">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       {/* ------------------------------------------------------------------- */}
-      /* 1-CLICK QUICK DEMO SWITCHER BAR (For Screen Recording & Pitching) */
+      {/* NAVBAR                                                              */}
       {/* ------------------------------------------------------------------- */}
-      <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 shadow-xl">
-        <div className="flex justify-between items-center mb-3">
-          <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-            🎬 Quick Demo Mode Switcher
-          </span>
-          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">
-            Pass: Password123!
-          </span>
+      <header className="border-b border-slate-800 bg-slate-900 px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center space-x-3">
+          <Building className="w-6 h-6 text-blue-500" />
+          <span className="font-bold text-lg text-white">PropManager HQ</span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
-          <button
-            type="button"
-            onClick={() => handleDemoLogin('admin@demo.com')}
-            className="p-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded text-purple-200 font-semibold transition"
-          >
-            Super Admin
-          </button>
-          <button
-            type="button"
-            onClick={() => handleDemoLogin('landlord1@demo.com')}
-            className="p-2 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/50 rounded text-blue-200 font-semibold transition"
-          >
-            Landlord
-          </button>
-          <button
-            type="button"
-            onClick={() => handleDemoLogin('manager1@demo.com')}
-            className="p-2 bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-700/50 rounded text-indigo-200 font-semibold transition"
-          >
-            Property Mgr
-          </button>
-          <button
-            type="button"
-            onClick={() => handleDemoLogin('caretaker1@demo.com')}
-            className="p-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded text-amber-200 font-semibold transition"
-          >
-            Caretaker
-          </button>
-          <button
-            type="button"
-            onClick={() => handleDemoLogin('tenant1@demo.com')}
-            className="p-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded text-emerald-200 font-semibold transition col-span-2 md:col-span-1"
-          >
-            Tenant (A101)
-          </button>
-        </div>
-      </div>
+        {profile && (
+          <div className="flex items-center space-x-4">
+            <div className="text-right hidden sm:block">
+              <p className="text-sm font-semibold text-white">{profile.full_name}</p>
+              <p className="text-xs text-blue-400 font-mono">{profile.role}</p>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition"
+              title="Sign Out"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+      </header>
 
       {/* ------------------------------------------------------------------- */}
-      /* NATIVE SUPABASE EMAIL / PASSWORD LOGIN FORM                        */
+      {/* MAIN DASHBOARD CONTENT BY ROLE                                      */}
       {/* ------------------------------------------------------------------- */}
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-blue-400">PropManager HQ</h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Authenticating against Supabase Auth & RLS Policies
-          </p>
+      <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
+        {/* Banner */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-white">
+              Welcome back, {profile?.full_name}!
+            </h1>
+            <p className="text-sm text-slate-400 mt-1">
+              Active Role: <span className="text-amber-400 font-semibold">{profile?.role}</span>
+            </p>
+          </div>
+          <div className="text-xs bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 font-mono text-slate-400">
+            Auth ID: {profile?.id.substring(0, 8)}...
+          </div>
         </div>
 
-        {errorMessage && (
-          <div className="mb-4 p-3 bg-red-900/50 border border-red-700 text-red-200 text-xs rounded font-medium">
-            {errorMessage}
+        {/* ================================================================= */}
+        {/* ROLE 1: TENANT DASHBOARD                                          */}
+        {/* ================================================================= */}
+        {profile?.role === 'TENANT' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Quick Call Caretaker Section */}
+            <div className="bg-gradient-to-br from-amber-900/40 to-slate-900 border border-amber-500/30 rounded-xl p-6 space-y-4">
+              <div className="flex items-center space-x-3 text-amber-400">
+                <PhoneCall className="w-6 h-6" />
+                <h2 className="font-bold text-lg">Direct Caretaker Contact</h2>
+              </div>
+              <p className="text-xs text-slate-300">
+                Need urgent assistance, repairs, or inquiries? Reach your property caretaker immediately.
+              </p>
+              {properties.length > 0 && properties[0].caretaker_phone ? (
+                <div className="bg-slate-950/80 p-4 rounded-lg border border-slate-800 space-y-2">
+                  <p className="text-xs text-slate-400">Caretaker: <span className="text-white font-semibold">{properties[0].caretaker_name || 'Samuel Otieno'}</span></p>
+                  <a
+                    href={`tel:${properties[0].caretaker_phone}`}
+                    className="w-full py-3 bg-amber-500 hover:bg-amber-400 font-bold text-slate-950 rounded-lg flex items-center justify-center space-x-2 transition"
+                  >
+                    <PhoneCall className="w-4 h-4" />
+                    <span>Call Caretaker ({properties[0].caretaker_phone})</span>
+                  </a>
+                </div>
+              ) : (
+                <a
+                  href="tel:254700123456"
+                  className="w-full py-3 bg-amber-500 hover:bg-amber-400 font-bold text-slate-950 rounded-lg flex items-center justify-center space-x-2 transition"
+                >
+                  <PhoneCall className="w-4 h-4" />
+                  <span>Call Caretaker (+254 700 123 456)</span>
+                </a>
+              )}
+            </div>
+
+            {/* Tenant Overview */}
+            <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+              <h2 className="font-bold text-lg text-white flex items-center space-x-2">
+                <FileText className="w-5 h-5 text-blue-400" />
+                <span>My Unit & Invoices</span>
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
+                  <p className="text-xs text-slate-400">Current Status</p>
+                  <p className="text-lg font-bold text-emerald-400 mt-1">Paid in Full</p>
+                </div>
+                <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
+                  <p className="text-xs text-slate-400">Next Due Date</p>
+                  <p className="text-lg font-bold text-white mt-1">1st Next Month</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-sm">
-          <div>
-            <label className="block text-xs font-semibold text-gray-300 mb-1">
-              Email Address
-            </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. tenant1@demo.com"
-              className="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-white focus:outline-none focus:border-blue-500"
-            />
+        {/* ================================================================= */}
+        {/* ROLE 2: CARETAKER DASHBOARD                                       */}
+        {/* ================================================================= */}
+        {profile?.role === 'CARETAKER' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <Users className="w-6 h-6 text-amber-400 mb-2" />
+                <h3 className="text-sm font-medium text-slate-400">Assigned Tenants</h3>
+                <p className="text-2xl font-bold text-white mt-1">12 Occupied</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <FileText className="w-6 h-6 text-blue-400 mb-2" />
+                <h3 className="text-sm font-medium text-slate-400">Pending Utility Invoices</h3>
+                <p className="text-2xl font-bold text-white mt-1">3 Water / Garbage</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <PhoneCall className="w-6 h-6 text-emerald-400 mb-2" />
+                <h3 className="text-sm font-medium text-slate-400">Caretaker Line</h3>
+                <p className="text-lg font-mono text-emerald-400 mt-1">+254 712 999 888</p>
+              </div>
+            </div>
           </div>
+        )}
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-300 mb-1">
-              Password
-            </label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-white focus:outline-none focus:border-blue-500"
-            />
+        {/* ================================================================= */}
+        {/* ROLE 3 & 4: PROPERTY MANAGER & LANDLORD DASHBOARD                 */}
+        {/* ================================================================= */}
+        {(profile?.role === 'PROPERTY_MANAGER' || profile?.role === 'LANDLORD') && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <Building className="w-6 h-6 text-blue-400 mb-2" />
+                <h3 className="text-xs font-medium text-slate-400">Managed Properties</h3>
+                <p className="text-2xl font-bold text-white mt-1">{properties.length}</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <DollarSign className="w-6 h-6 text-emerald-400 mb-2" />
+                <h3 className="text-xs font-medium text-slate-400">Monthly Revenue</h3>
+                <p className="text-2xl font-bold text-white mt-1">KES 450,000</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <CreditCard className="w-6 h-6 text-amber-400 mb-2" />
+                <h3 className="text-xs font-medium text-slate-400">Unassigned Payments</h3>
+                <p className="text-2xl font-bold text-amber-400 mt-1">2 Pending</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <Users className="w-6 h-6 text-indigo-400 mb-2" />
+                <h3 className="text-xs font-medium text-slate-400">Occupancy Rate</h3>
+                <p className="text-2xl font-bold text-white mt-1">94%</p>
+              </div>
+            </div>
           </div>
+        )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-500 font-bold rounded text-white transition disabled:opacity-50"
-          >
-            {loading ? 'Authenticating & Verifying RLS...' : 'Sign In to Dashboard'}
-          </button>
-        </form>
-      </div>
+        {/* ================================================================= */}
+        {/* ROLE 5: SUPER ADMIN DASHBOARD                                     */}
+        {/* ================================================================= */}
+        {profile?.role === 'SUPER_ADMIN' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <div className="bg-purple-950/30 border border-purple-800/40 p-6 rounded-xl">
+                <ShieldCheck className="w-6 h-6 text-purple-400 mb-2" />
+                <h3 className="text-xs font-medium text-slate-400">System Admin Control</h3>
+                <p className="text-xl font-bold text-purple-300 mt-1">Full System Override</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <Users className="w-6 h-6 text-blue-400 mb-2" />
+                <h3 className="text-xs font-medium text-slate-400">Total System Profiles</h3>
+                <p className="text-2xl font-bold text-white mt-1">13 Auth Users</p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                <Building className="w-6 h-6 text-emerald-400 mb-2" />
+                <h3 className="text-xs font-medium text-slate-400">Properties Managed</h3>
+                <p className="text-2xl font-bold text-white mt-1">{properties.length}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Active Managed Properties List */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+          <h2 className="text-lg font-bold text-white mb-4 flex items-center space-x-2">
+            <Building className="w-5 h-5 text-blue-400" />
+            <span>Accessible Properties (Filtered by RLS)</span>
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {properties.map((prop) => (
+              <div key={prop.id} className="bg-slate-950 p-4 rounded-lg border border-slate-800">
+                <h3 className="font-bold text-white">{prop.name}</h3>
+                <p className="text-xs text-slate-400 mt-1">Location: {prop.location}</p>
+                {prop.caretaker_name && (
+                  <p className="text-xs text-amber-400 mt-2">
+                    Caretaker: {prop.caretaker_name} ({prop.caretaker_phone})
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
