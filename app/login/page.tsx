@@ -2,153 +2,77 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabaseClient";
+import { loginWithRole } from "@/app/actions/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function handleDemoLogin(demoEmail: string) {
-    setEmail(demoEmail);
-    setPassword("Password123!");
-    await executeAuth(demoEmail, "Password123!");
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    await executeAuth(email, password);
-  }
-
-  async function executeAuth(loginEmail: string, loginPass: string) {
+  async function handleDemoLogin(email: string) {
     setLoading(true);
     setErrorMessage(null);
 
-    try {
-      // Direct sign-in against seeded accounts
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: loginPass,
-      });
+    const result = await loginWithRole(email);
 
-      if (error) {
-        setErrorMessage(error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (data?.session) {
-        router.push("/");
-        router.refresh();
-      }
-    } catch (err: any) {
-      setErrorMessage(err?.message || "Unexpected network error occurred.");
+    if (result.success) {
+      router.push("/");
+      router.refresh();
+    } else {
+      setErrorMessage(result.error || "Login failed");
       setLoading(false);
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-center items-center p-4">
-      {/* 1-CLICK QUICK DEMO SWITCHER BAR */}
-      <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 shadow-xl">
-        <div className="flex justify-between items-center mb-3">
-          <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-            🎬 Quick Demo Mode Switcher
-          </span>
-          <span className="text-xs text-slate-400 font-mono">
-            Pass: Password123!
-          </span>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl text-center">
+        <h1 className="text-2xl font-bold text-blue-400 mb-2">PropManager HQ</h1>
+        <p className="text-xs text-slate-400 mb-6">Select a demo role to log in instantly</p>
+
+        {errorMessage && (
+          <div className="mb-4 p-3 bg-red-900/50 border border-red-500 rounded text-red-200 text-xs">
+            {errorMessage}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <button
             onClick={() => handleDemoLogin("admin@demo.com")}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs rounded border border-slate-700 text-slate-200 transition text-center"
+            disabled={loading}
+            className="px-3 py-3 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded border border-slate-700 transition"
           >
             Super Admin
           </button>
           <button
             onClick={() => handleDemoLogin("landlord1@demo.com")}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs rounded border border-slate-700 text-slate-200 transition text-center"
+            disabled={loading}
+            className="px-3 py-3 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded border border-slate-700 transition"
           >
             Landlord
           </button>
           <button
             onClick={() => handleDemoLogin("manager1@demo.com")}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs rounded border border-slate-700 text-slate-200 transition text-center"
+            disabled={loading}
+            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded border border-slate-700 transition"
           >
             Property Mgr
           </button>
           <button
             onClick={() => handleDemoLogin("caretaker1@demo.com")}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs rounded border border-slate-700 text-slate-200 transition text-center"
+            disabled={loading}
+            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded border border-slate-700 transition"
           >
             Caretaker
           </button>
           <button
             onClick={() => handleDemoLogin("tenant1@demo.com")}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs rounded border border-slate-700 text-slate-200 transition text-center"
+            disabled={loading}
+            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded border border-slate-700 transition"
           >
             Tenant (A101)
           </button>
         </div>
-      </div>
-
-      {/* LOGIN FORM */}
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-blue-400">PropManager HQ</h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Authenticating against Supabase Auth
-          </p>
-        </div>
-
-        {errorMessage && (
-          <div className="mb-4 p-3 bg-red-900/50 border border-red-500 rounded text-red-200 text-xs text-center">
-            {errorMessage}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1">
-              Email Address
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded text-sm text-white focus:outline-none focus:border-blue-500"
-              placeholder="user@demo.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded text-sm text-white focus:outline-none focus:border-blue-500"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-500 font-bold rounded text-white transition disabled:opacity-50"
-          >
-            {loading ? "Authenticating..." : "Sign In to Dashboard"}
-          </button>
-        </form>
       </div>
     </div>
   );
