@@ -36,7 +36,8 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/signin`,
+          // FIXED: Updated redirect URL to match the /login folder
+          emailRedirectTo: `${window.location.origin}/login`,
           data: {
             full_name: fullName,
             role: role,
