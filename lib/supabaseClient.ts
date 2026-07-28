@@ -1,12 +1,8 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createBrowserClient } from "@supabase/ssr";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-// Exporting the client instance directly
-export const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey);
-
-// Helper function to maintain compatibility with app/login/page.tsx
 export function createClient() {
-  return supabase;
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 }
