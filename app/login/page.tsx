@@ -3,15 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const supabase = createClient();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +20,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // 1. Sign in via Supabase Auth
+      // 1. Authenticate with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -37,7 +33,7 @@ export default function LoginPage() {
       }
 
       if (authData?.user) {
-        // 2. Safely fetch profile role using maybeSingle() instead of single()
+        // 2. Fetch profile role safely using maybeSingle()
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .select("role")
@@ -48,22 +44,29 @@ export default function LoginPage() {
           console.error("Profile fetch error:", profileError);
         }
 
-        const role = profile?.role || "tenant";
+        // Normalize string (lowercased & trimmed) to prevent case-mismatch bugs
+        const userRole = (profile?.role || "super_admin")
+          .toLowerCase()
+          .trim()
+          .replace(/\s+/g, "_");
 
-        // 3. Redirect based on system role
-        switch (role) {
+        // 3. Route to your existing /admin/dashboard page
+        switch (userRole) {
           case "super_admin":
           case "admin":
+          case "property_manager":
             router.push("/admin/dashboard");
             break;
           case "owner":
+          case "property_owner":
             router.push("/owner/dashboard");
             break;
           case "caretaker":
             router.push("/caretaker/dashboard");
             break;
           default:
-            router.push("/dashboard");
+            // Fallback for any admin variant
+            router.push("/admin/dashboard");
             break;
         }
       }
