@@ -42,18 +42,16 @@ export default function LoginPage() {
           console.error("Profile fetch error:", profileError);
         }
 
-        const rawRole = profile?.role || "tenant";
+        const rawRole = profile?.role || "property_manager";
         const normalizedRole = rawRole.toLowerCase().trim().replace(/\s+/g, "_");
 
-        // EXPLICIT SEPARATED ROUTING
         switch (normalizedRole) {
           case "super_admin":
             router.push("/super-admin/dashboard");
             break;
 
-          case "admin":
           case "property_manager":
-            router.push("/admin/dashboard");
+            router.push("/property-manager/dashboard");
             break;
 
           case "owner":
@@ -65,14 +63,22 @@ export default function LoginPage() {
             router.push("/caretaker/dashboard");
             break;
 
+          case "tenant":
+            router.push("/tenant/dashboard");
+            break;
+
           default:
-            router.push("/super-admin/dashboard");
+            router.push("/property-manager/dashboard");
             break;
         }
       }
     } catch (err: any) {
       console.error("Sign-in exception:", err);
-      setErrorMsg(err?.message || "An unexpected error occurred during sign in.");
+      const message =
+        typeof err === "string"
+          ? err
+          : err?.message || "An unexpected error occurred during sign in.";
+      setErrorMsg(message);
     } finally {
       setLoading(false);
     }
@@ -96,7 +102,9 @@ export default function LoginPage() {
 
         <form onSubmit={handleSignIn} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Email Address
+            </label>
             <input
               type="email"
               required
@@ -108,7 +116,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">
+              Password
+            </label>
             <input
               type="password"
               required
