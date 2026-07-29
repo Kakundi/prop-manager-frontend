@@ -20,7 +20,6 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // 1. Authenticate with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -33,7 +32,6 @@ export default function LoginPage() {
       }
 
       if (authData?.user) {
-        // 2. Fetch profile role safely using maybeSingle()
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .select("role")
@@ -44,29 +42,31 @@ export default function LoginPage() {
           console.error("Profile fetch error:", profileError);
         }
 
-        // Normalize string (lowercased & trimmed) to prevent case-mismatch bugs
-        const userRole = (profile?.role || "super_admin")
-          .toLowerCase()
-          .trim()
-          .replace(/\s+/g, "_");
+        const rawRole = profile?.role || "tenant";
+        const normalizedRole = rawRole.toLowerCase().trim().replace(/\s+/g, "_");
 
-        // 3. Route to your existing /admin/dashboard page
-        switch (userRole) {
+        // EXPLICIT SEPARATED ROUTING
+        switch (normalizedRole) {
           case "super_admin":
+            router.push("/super-admin/dashboard");
+            break;
+
           case "admin":
           case "property_manager":
             router.push("/admin/dashboard");
             break;
+
           case "owner":
           case "property_owner":
             router.push("/owner/dashboard");
             break;
+
           case "caretaker":
             router.push("/caretaker/dashboard");
             break;
+
           default:
-            // Fallback for any admin variant
-            router.push("/admin/dashboard");
+            router.push("/super-admin/dashboard");
             break;
         }
       }
