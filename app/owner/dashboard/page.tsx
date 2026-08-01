@@ -1,234 +1,298 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabaseClient";
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
-interface OwnerProperty {
+type Role = 'SUPERADMIN' | 'LANDLORD' | 'PROPERTY_MANAGER' | 'CARETAKER' | 'TENANT';
+
+interface Profile {
   id: string;
-  name: string;
-  address: string;
-  totalUnits: number;
-  occupiedUnits: number;
-  monthlyGross: number;
-  managementFeePercent: number;
-  netPayout: number;
+  full_name: string;
+  email: string;
+  role: Role;
 }
 
-export default function OwnerDashboard() {
-  const supabase = createClient();
+interface Property {
+  id: string;
+  name: string;
+  location: string | null;
+  landlord_id: string | null;
+  property_manager_id: string | null;
+  caretaker_id: string | null;
+  water_rate_per_unit: number;
+}
 
-  const [loading, setLoading] = useState(true);
-  const [ownerName, setOwnerName] = useState("");
-  const [properties, setProperties] = useState<OwnerProperty[]>([]);
-  const [financials, setFinancials] = useState({
-    grossRevenue: 0,
-    managementFees: 0,
-    netPayout: 0,
-    totalUnits: 0,
-    occupiedUnits: 0,
-  });
+interface Unit {
+  id: string;
+  property_id: string;
+  unit_number: string;
+  rent_amount: number;
+  garbage_fee: number;
+  parking_fee: number;
+}
+
+export default function PropertyOwnerDashboard({ currentUserId }: { currentUserId?: string }) {
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // Form states for assignment
+  const [targetRole, setTargetRole] = useState<'TENANT' | 'CARETAKER' | 'PROPERTY_MANAGER'>('TENANT');
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('');
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('');
 
   useEffect(() => {
-    fetchOwnerPortfolio();
-  }, []);
+    fetchOwnerData();
+  }, [currentUserId]);
 
-  async function fetchOwnerPortfolio() {
+  async function fetchOwnerData() {
     setLoading(true);
+
+    // 1. Fetch properties owned by this landlord (or all properties if no ID passed)
+    let query = supabase.from('properties').select('*');
+    if (currentUserId) {
+      query = query.eq('landlord_id', currentUserId);
+    }
+    const { data: propsData } = await query;
+    if (propsData) setProperties(propsData);
+
+    // 2. Fetch profiles for assignment dropdowns
+    const { data: profsData } = await supabase.from('profiles').select('*');
+    if (profsData) setProfiles(profsData);
+
+    setLoading(false);
+  }
+
+  // Load units whenever property selection changes
+  async function handlePropertyChange(propertyId: string) {
+    setSelectedPropertyId(propertyId);
+    setSelectedUnitId('');
+
+    if (propertyId) {
+      const { data: unitData } = await supabase
+        .from('units')
+        .select('*')
+        .eq('property_id', propertyId);
+      if (unitData) setUnits(unitData);
+    } else {
+      setUnits([]);
+    }
+  }
+
+  async function handleConfirmAssignment() {
+    if (!selectedPropertyId || !selectedProfileId) {
+      alert('Please select a property and a person.');
+      return;
+    }
+
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      if (targetRole === 'TENANT') {
+        if (!selectedUnitId) {
+          alert('Please select a target unit for the tenant.');
+          return;
+        }
 
-      if (!user) return;
-
-      // 1. Fetch Profile
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", user.id)
-        .single();
-
-      if (profile) setOwnerName(profile.full_name || "Property Owner");
-
-      // 2. Fetch Owner's Properties with Units and Invoices
-      const { data: propsData } = await supabase
-        .from("properties")
-        .select(`
-          id,
-          name,
-          address,
-          management_fee_percentage,
-          units (
-            id,
-            is_occupied,
-            invoices (
-              amount_paid,
-              balance
-            )
-          )
-        `)
-        .eq("owner_id", user.id);
-
-      if (propsData) {
-        let totalGross = 0;
-        let totalFees = 0;
-        let totalNet = 0;
-        let grandTotalUnits = 0;
-        let grandOccupiedUnits = 0;
-
-        const formattedProps: OwnerProperty[] = propsData.map((p: any) => {
-          const propertyUnits = p.units || [];
-          const totalUnits = propertyUnits.length;
-          const occupiedUnits = propertyUnits.filter((u: any) => u.is_occupied).length;
-
-          // Calculate collected revenue for this property
-          let propGross = 0;
-          propertyUnits.forEach((u: any) => {
-            (u.invoices || []).forEach((inv: any) => {
-              propGross += Number(inv.amount_paid || 0);
-            });
-          });
-
-          const feePercent = p.management_fee_percentage || 10; // Default 10% management fee
-          const feeAmount = propGross * (feePercent / 100);
-          const net = propGross - feeAmount;
-
-          totalGross += propGross;
-          totalFees += feeAmount;
-          totalNet += net;
-          grandTotalUnits += totalUnits;
-          grandOccupiedUnits += occupiedUnits;
-
-          return {
-            id: p.id,
-            name: p.name,
-            address: p.address || "N/A",
-            totalUnits,
-            occupiedUnits,
-            monthlyGross: propGross,
-            managementFeePercent: feePercent,
-            netPayout: net,
-          };
+        const { error } = await supabase.from('tenants').insert({
+          property_id: selectedPropertyId,
+          unit_id: selectedUnitId,
+          profile_id: selectedProfileId,
+          is_active: true,
         });
 
-        setProperties(formattedProps);
-        setFinancials({
-          grossRevenue: totalGross,
-          managementFees: totalFees,
-          netPayout: totalNet,
-          totalUnits: grandTotalUnits,
-          occupiedUnits: grandOccupiedUnits,
-        });
+        if (error) throw error;
+        alert('Tenant assigned to unit successfully!');
+
+      } else if (targetRole === 'CARETAKER') {
+        const { error } = await supabase
+          .from('properties')
+          .update({ caretaker_id: selectedProfileId })
+          .eq('id', selectedPropertyId);
+
+        if (error) throw error;
+        alert('Caretaker assigned to property!');
+
+      } else if (targetRole === 'PROPERTY_MANAGER') {
+        const { error } = await supabase
+          .from('properties')
+          .update({ property_manager_id: selectedProfileId })
+          .eq('id', selectedPropertyId);
+
+        if (error) throw error;
+        alert('Property Manager assigned!');
       }
-    } catch (err) {
-      console.error("Error loading owner portfolio:", err);
-    } finally {
-      setLoading(false);
+
+      // Reset selection
+      setSelectedProfileId('');
+      setSelectedUnitId('');
+      fetchOwnerData();
+
+    } catch (err: any) {
+      alert(`Assignment failed: ${err.message}`);
     }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center text-sm font-medium">
-        Loading owner portal...
+      <div className="p-8 text-center text-slate-500 font-medium">
+        Loading property portfolio data...
       </div>
     );
   }
 
-  const occupancyRate =
-    financials.totalUnits > 0
-      ? Math.round((financials.occupiedUnits / financials.totalUnits) * 100)
-      : 0;
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-8">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-        <div>
-          <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
-            Owner Investor Portal
-          </span>
-          <h1 className="text-2xl font-bold text-slate-100 mt-1">Portfolio Statements: {ownerName}</h1>
-        </div>
-
-        <button
-          onClick={() => alert("Generating monthly PDF financial statement...")}
-          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-amber-500/10 active:scale-95"
-        >
-          Download Monthly Statement (PDF)
-        </button>
+    <div className="max-w-6xl mx-auto p-6 space-y-8 bg-slate-50 min-h-screen">
+      {/* Header */}
+      <div className="border-b border-slate-200 pb-4">
+        <h1 className="text-2xl font-bold text-slate-900">Property Owner Dashboard</h1>
+        <p className="text-sm text-slate-500">
+          Manage your real estate portfolio, assign staff, and place tenants
+        </p>
       </div>
 
-      {/* Financial KPI Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Gross Rental Collected */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2">
-          <span className="text-xs font-semibold text-slate-400">Gross Rental Collected</span>
-          <div className="text-2xl font-bold text-emerald-400 font-mono">
-            KSh {financials.grossRevenue.toLocaleString()}
-          </div>
-          <p className="text-[11px] text-slate-500">Total rent paid by tenants</p>
+      {/* Portfolio Quick Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500 uppercase">Total Properties</p>
+          <p className="text-3xl font-extrabold text-slate-900 mt-2">{properties.length}</p>
         </div>
-
-        {/* Management Fees Deducted */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2">
-          <span className="text-xs font-semibold text-slate-400">Management Fees</span>
-          <div className="text-2xl font-bold text-amber-400 font-mono">
-            -KSh {financials.managementFees.toLocaleString()}
-          </div>
-          <p className="text-[11px] text-slate-500">Property management commission</p>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500 uppercase">Assigned Managers</p>
+          <p className="text-3xl font-extrabold text-blue-600 mt-2">
+            {properties.filter((p) => p.property_manager_id).length}
+          </p>
         </div>
-
-        {/* Net Payout Amount */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2">
-          <span className="text-xs font-semibold text-slate-400">Net Owner Payout</span>
-          <div className="text-2xl font-bold text-blue-400 font-mono">
-            KSh {financials.netPayout.toLocaleString()}
-          </div>
-          <p className="text-[11px] text-blue-500/90 font-medium">Ready for disbursement</p>
-        </div>
-
-        {/* Portfolio Occupancy */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2">
-          <span className="text-xs font-semibold text-slate-400">Portfolio Occupancy</span>
-          <div className="text-2xl font-bold text-slate-100 font-mono">{occupancyRate}%</div>
-          <p className="text-[11px] text-slate-500">
-            {financials.occupiedUnits} of {financials.totalUnits} Units Occupied
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500 uppercase">Assigned Caretakers</p>
+          <p className="text-3xl font-extrabold text-emerald-600 mt-2">
+            {properties.filter((p) => p.caretaker_id).length}
           </p>
         </div>
       </div>
 
-      {/* Property Breakdown Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-        <h2 className="text-sm font-bold text-slate-200">Property Financial Performance</h2>
+      {/* Staff & Tenant Assignment Control */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-bold text-slate-800">Assign Roles & Units</h2>
+          <p className="text-xs text-slate-500">
+            Link staff members to properties or attach tenants directly to units
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase">Assignment Category</label>
+            <select
+              value={targetRole}
+              onChange={(e) => setTargetRole(e.target.value as any)}
+              className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="TENANT">Tenant to Unit</option>
+              <option value="CARETAKER">Caretaker to Property</option>
+              <option value="PROPERTY_MANAGER">Property Manager to Property</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase">Select Person Profile</label>
+            <select
+              value={selectedProfileId}
+              onChange={(e) => setSelectedProfileId(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">-- Select Person --</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name || p.email} ({p.role})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase">Target Property</label>
+            <select
+              value={selectedPropertyId}
+              onChange={(e) => handlePropertyChange(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">-- Choose Property --</option>
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} {p.location ? `(${p.location})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {targetRole === 'TENANT' && (
+            <div>
+              <label className="text-xs font-semibold text-slate-600 uppercase">Target Unit</label>
+              <select
+                value={selectedUnitId}
+                onChange={(e) => setSelectedUnitId(e.target.value)}
+                disabled={!selectedPropertyId}
+                className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <option value="">
+                  {selectedPropertyId ? '-- Choose Unit --' : 'Select a property first'}
+                </option>
+                {units.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.unit_number} — KES {u.rent_amount.toLocaleString()}/mo
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={handleConfirmAssignment}
+          className="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg text-sm hover:bg-blue-700 transition shadow-sm"
+        >
+          Confirm Assignment
+        </button>
+      </div>
+
+      {/* Property Portfolio Table */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <h2 className="text-lg font-bold text-slate-800">My Properties</h2>
 
         {properties.length === 0 ? (
-          <p className="text-xs text-slate-500 py-8 text-center">No properties registered under your account.</p>
+          <p className="text-sm text-slate-500 py-4 text-center">No properties registered under this account.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
+            <table className="w-full text-left text-sm text-slate-700">
+              <thead className="bg-slate-100 text-xs uppercase font-semibold text-slate-600 border-b border-slate-200">
                 <tr>
-                  <th className="p-3">Property Name</th>
-                  <th className="p-3">Occupancy</th>
-                  <th className="p-3">Gross Collected</th>
-                  <th className="p-3">Mgmt Fee %</th>
-                  <th className="p-3 text-right">Net Payout</th>
+                  <th className="py-3 px-4">Property Name</th>
+                  <th className="py-3 px-4">Location</th>
+                  <th className="py-3 px-4">Water Rate (Unit)</th>
+                  <th className="py-3 px-4">Manager Status</th>
+                  <th className="py-3 px-4">Caretaker Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {properties.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-800/40">
-                    <td className="p-3 font-semibold text-slate-100">{p.name}</td>
-                    <td className="p-3">
-                      {p.occupiedUnits} / {p.totalUnits} Units
+              <tbody className="divide-y divide-slate-100">
+                {properties.map((prop) => (
+                  <tr key={prop.id} className="hover:bg-slate-50">
+                    <td className="py-3 px-4 font-semibold text-slate-900">{prop.name}</td>
+                    <td className="py-3 px-4 text-slate-500">{prop.location || 'N/A'}</td>
+                    <td className="py-3 px-4 font-mono">KES {prop.water_rate_per_unit}</td>
+                    <td className="py-3 px-4">
+                      {prop.property_manager_id ? (
+                        <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-medium">Assigned</span>
+                      ) : (
+                        <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-medium">Unassigned</span>
+                      )}
                     </td>
-                    <td className="p-3 font-mono text-emerald-400">
-                      KSh {p.monthlyGross.toLocaleString()}
-                    </td>
-                    <td className="p-3 font-mono text-amber-400">{p.managementFeePercent}%</td>
-                    <td className="p-3 font-mono font-bold text-blue-400 text-right">
-                      KSh {p.netPayout.toLocaleString()}
+                    <td className="py-3 px-4">
+                      {prop.caretaker_id ? (
+                        <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-medium">Assigned</span>
+                      ) : (
+                        <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-medium">Unassigned</span>
+                      )}
                     </td>
                   </tr>
                 ))}

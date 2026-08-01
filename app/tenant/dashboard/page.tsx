@@ -1,302 +1,254 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabaseClient";
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+
+interface Unit {
+  id: string;
+  unit_number: string;
+  rent_amount: number;
+  garbage_fee: number;
+  parking_fee: number;
+  properties: {
+    name: string;
+    location: string | null;
+  };
+}
+
+interface TenantRecord {
+  id: string;
+  unit_id: string;
+  is_active: boolean;
+  units: Unit;
+}
 
 interface Invoice {
   id: string;
   billing_month: string;
-  due_date: string;
-  amount_paid: number;
-  balance: number;
-  status: string;
+  rent_amount: number;
+  water_amount: number;
+  garbage_fee: number;
+  parking_fee: number;
+  total_amount: number;
+  previous_water_reading: number;
+  current_water_reading: number;
+  status: 'UNPAID' | 'PAID' | 'PARTIAL';
   created_at: string;
-  units?: {
-    unit_number: string;
-    properties?: {
-      name: string;
-    };
-  };
 }
 
-export default function TenantDashboardPage() {
-  const supabase = createClient();
-
+export default function TenantDashboard({ currentUserId }: { currentUserId?: string }) {
+  const [tenantInfo, setTenantInfo] = useState<TenantRecord | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
-
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [customAmount, setCustomAmount] = useState<number>(0);
-  const [stkLoading, setStkLoading] = useState(false);
-  const [stkMsg, setStkMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    fetchTenantInvoices();
-  }, []);
+    fetchTenantData();
+  }, [currentUserId]);
 
-  async function fetchTenantInvoices() {
+  async function fetchTenantData() {
     setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
 
-      if (user) {
-        // Fetch current profile phone to auto-fill payment field
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("phone")
-          .eq("id", user.id)
-          .single();
-
-        if (profile?.phone) {
-          setPhoneNumber(profile.phone);
-        }
-
-        // Fetch invoices assigned to tenant's profile
-        const { data: tenantData } = await supabase
-          .from("tenants")
-          .select("id")
-          .eq("profile_id", user.id)
-          .single();
-
-        if (tenantData) {
-          const { data: invoiceData } = await supabase
-            .from("invoices")
-            .select("*, units(unit_number, properties(name))")
-            .eq("tenant_id", tenantData.id)
-            .order("created_at", { ascending: false });
-
-          if (invoiceData) {
-            setInvoices(invoiceData as any);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Error loading tenant dashboard:", err);
-    } finally {
+    if (!currentUserId) {
       setLoading(false);
+      return;
     }
-  }
 
-  function openPaymentModal(inv: Invoice) {
-    setPayingInvoice(inv);
-    setCustomAmount(inv.balance);
-    setStkMsg(null);
-  }
+    // 1. Fetch active tenant agreement & unit info linked to profile
+    const { data: tenantData } = await supabase
+      .from('tenants')
+      .select('*, units(*, properties(name, location))')
+      .eq('profile_id', currentUserId)
+      .eq('is_active', true)
+      .maybeSingle();
 
-  async function handleSTKPush(e: React.FormEvent) {
-    e.preventDefault();
-    if (!payingInvoice) return;
+    if (tenantData) {
+      setTenantInfo(tenantData as any);
 
-    setStkLoading(true);
-    setStkMsg(null);
+      // 2. Fetch invoices for this tenant record
+      const { data: invoiceData } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('tenant_id', tenantData.id)
+        .order('billing_month', { ascending: false });
 
-    try {
-      const res = await fetch("/api/mpesa/stkpush", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phoneNumber,
-          amount: customAmount,
-          accountReference: payingInvoice.units?.unit_number || "RENT",
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Failed to trigger M-Pesa prompt.");
-      }
-
-      setStkMsg({
-        type: "success",
-        text: data.CustomerMessage || "STK Push sent! Please enter your M-Pesa PIN on your phone to complete the payment.",
-      });
-    } catch (err: any) {
-      setStkMsg({ type: "error", text: err.message || "Payment initiation failed." });
-    } finally {
-      setStkLoading(false);
+      if (invoiceData) setInvoices(invoiceData);
     }
+
+    setLoading(false);
   }
 
-  const activeInvoice = invoices.find((i) => i.balance > 0);
+  if (loading) {
+    return (
+      <div className="p-8 text-center text-slate-500 font-medium">
+        Loading tenant portal statement...
+      </div>
+    );
+  }
+
+  if (!tenantInfo) {
+    return (
+      <div className="max-w-2xl mx-auto p-8 my-12 bg-white rounded-xl border border-slate-200 shadow-sm text-center">
+        <h2 className="text-xl font-bold text-slate-800">No Active Lease Found</h2>
+        <p className="text-sm text-slate-500 mt-2">
+          Your profile is not currently assigned to an active property unit. Please contact your property manager or landlord.
+        </p>
+      </div>
+    );
+  }
+
+  const latestInvoice = invoices[0];
+  const unit = tenantInfo.units;
+  const property = unit?.properties;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 flex justify-center">
-      <div className="w-full max-w-4xl space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
-          <div>
-            <h1 className="text-xl font-bold text-blue-400">Tenant Portal</h1>
-            <p className="text-xs text-slate-400 mt-1">
-              View outstanding balances and settle monthly invoices via M-Pesa
-            </p>
-          </div>
-          <button
-            onClick={fetchTenantInvoices}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-md border border-slate-700 transition"
-          >
-            Refresh
-          </button>
+    <div className="max-w-5xl mx-auto p-6 space-y-8 bg-slate-50 min-h-screen">
+      {/* Header */}
+      <div className="border-b border-slate-200 pb-4">
+        <h1 className="text-2xl font-bold text-slate-900">Tenant Portal</h1>
+        <p className="text-sm text-slate-500">
+          View unit details, current statement breakdowns, and billing history
+        </p>
+      </div>
+
+      {/* Residence Overview Card */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase">Property Name</p>
+          <p className="text-lg font-bold text-slate-900 mt-1">{property?.name || 'N/A'}</p>
+          <p className="text-xs text-slate-500">{property?.location || 'Location not specified'}</p>
         </div>
 
-        {/* Active Balance Banner */}
-        {activeInvoice && (
-          <div className="bg-gradient-to-r from-blue-950 to-slate-900 border border-blue-800/50 rounded-xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-blue-400">
-                Outstanding Balance
-              </span>
-              <div className="text-3xl font-extrabold text-white mt-1">
-                KSh {activeInvoice.balance.toLocaleString()}.00
-              </div>
-              <p className="text-xs text-slate-400 mt-1">
-                Due Date: {activeInvoice.due_date} | House: {activeInvoice.units?.properties?.name} ({activeInvoice.units?.unit_number})
-              </p>
-            </div>
-            <button
-              onClick={() => openPaymentModal(activeInvoice)}
-              className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg shadow-lg transition transform hover:-translate-y-0.5"
-            >
-              Pay via M-Pesa STK Push
-            </button>
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase">Unit Number</p>
+          <p className="text-2xl font-extrabold text-blue-600 mt-1">Unit {unit?.unit_number}</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase">Base Monthly Rent</p>
+          <p className="text-lg font-bold text-slate-900 font-mono mt-1">
+            KES {unit?.rent_amount?.toLocaleString() || '0'}
+          </p>
+        </div>
+      </div>
+
+      {/* Latest Billing Statement */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Current Monthly Statement</h2>
+            <p className="text-xs text-slate-500">
+              {latestInvoice ? `Period: ${latestInvoice.billing_month}` : 'No invoice generated yet for this period'}
+            </p>
           </div>
-        )}
 
-        {/* Invoices List */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl">
-          <h2 className="text-sm font-bold text-slate-200 mb-4">Invoice & Payment History</h2>
-
-          {loading ? (
-            <div className="text-xs text-slate-400 py-8 text-center">Loading invoices...</div>
-          ) : invoices.length === 0 ? (
-            <div className="text-xs text-slate-400 py-8 text-center">No invoice records found for your account.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400">
-                    <th className="pb-3 font-medium">Billing Month</th>
-                    <th className="pb-3 font-medium">House Unit</th>
-                    <th className="pb-3 font-medium">Amount Paid</th>
-                    <th className="pb-3 font-medium">Balance</th>
-                    <th className="pb-3 font-medium">Status</th>
-                    <th className="pb-3 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {invoices.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-slate-800/40 transition">
-                      <td className="py-3 text-slate-200">{inv.billing_month}</td>
-                      <td className="py-3 text-slate-300">
-                        {inv.units?.properties?.name} - {inv.units?.unit_number}
-                      </td>
-                      <td className="py-3 text-slate-300">KSh {inv.amount_paid.toLocaleString()}</td>
-                      <td className="py-3 text-slate-200 font-semibold">KSh {inv.balance.toLocaleString()}</td>
-                      <td className="py-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            inv.status === "PAID"
-                              ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                              : "bg-amber-950 text-amber-400 border border-amber-800"
-                          }`}
-                        >
-                          {inv.status}
-                        </span>
-                      </td>
-                      <td className="py-3 text-right">
-                        {inv.balance > 0 ? (
-                          <button
-                            onClick={() => openPaymentModal(inv)}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition"
-                          >
-                            Pay
-                          </button>
-                        ) : (
-                          <span className="text-slate-500 text-xs">Cleared</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {latestInvoice && (
+            <span
+              className={`text-xs px-3 py-1 rounded-full font-bold self-start sm:self-auto ${
+                latestInvoice.status === 'PAID'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-rose-100 text-rose-800'
+              }`}
+            >
+              STATUS: {latestInvoice.status}
+            </span>
           )}
         </div>
 
-        {/* STK Push Payment Modal */}
-        {payingInvoice && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl space-y-4">
-              <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                <h3 className="text-sm font-bold text-slate-100">Pay Invoice via M-Pesa</h3>
-                <button
-                  onClick={() => setPayingInvoice(null)}
-                  className="text-slate-400 hover:text-white text-xs"
-                >
-                  ✕
-                </button>
+        {latestInvoice ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 font-mono">
+              <div>
+                <p className="text-xs text-slate-500 font-sans uppercase font-semibold">House Rent</p>
+                <p className="text-base font-bold text-slate-800 mt-1">
+                  KES {latestInvoice.rent_amount?.toLocaleString()}
+                </p>
               </div>
 
-              {stkMsg && (
-                <div
-                  className={`p-3 rounded-lg text-xs leading-relaxed border ${
-                    stkMsg.type === "success"
-                      ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-200"
-                      : "bg-red-950/80 border-red-500/50 text-red-200"
-                  }`}
-                >
-                  {stkMsg.text}
-                </div>
-              )}
+              <div>
+                <p className="text-xs text-slate-500 font-sans uppercase font-semibold">Water Charge</p>
+                <p className="text-base font-bold text-slate-800 mt-1">
+                  KES {latestInvoice.water_amount?.toLocaleString()}
+                </p>
+                <span className="text-[10px] text-slate-400 font-sans">
+                  ({latestInvoice.previous_water_reading} → {latestInvoice.current_water_reading} units)
+                </span>
+              </div>
 
-              <form onSubmit={handleSTKPush} className="space-y-4 text-xs">
-                <div>
-                  <label className="block text-slate-400 mb-1">M-Pesa Phone Number</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 0712345678 or 254712345678"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+              <div>
+                <p className="text-xs text-slate-500 font-sans uppercase font-semibold">Garbage Fee</p>
+                <p className="text-base font-bold text-slate-800 mt-1">
+                  KES {latestInvoice.garbage_fee?.toLocaleString()}
+                </p>
+              </div>
 
-                <div>
-                  <label className="block text-slate-400 mb-1">Amount to Pay (KSh)</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    max={payingInvoice.balance}
-                    value={customAmount}
-                    onChange={(e) => setCustomAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-white focus:outline-none focus:border-blue-500"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Full Balance: KSh {payingInvoice.balance.toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="pt-2 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPayingInvoice(null)}
-                    className="w-1/2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={stkLoading}
-                    className="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-md transition disabled:opacity-50"
-                  >
-                    {stkLoading ? "Sending Prompt..." : "Send STK Prompt"}
-                  </button>
-                </div>
-              </form>
+              <div>
+                <p className="text-xs text-slate-500 font-sans uppercase font-semibold">Parking Fee</p>
+                <p className="text-base font-bold text-slate-800 mt-1">
+                  KES {latestInvoice.parking_fee?.toLocaleString()}
+                </p>
+              </div>
             </div>
+
+            <div className="flex flex-col sm:flex-row justify-between items-center p-4 bg-slate-900 text-white rounded-xl">
+              <p className="text-sm font-medium">Total Amount Payable:</p>
+              <p className="text-2xl font-extrabold font-mono mt-1 sm:mt-0">
+                KES {latestInvoice.total_amount?.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500 py-4 text-center">
+            No active invoice issued for the current period.
+          </p>
+        )}
+      </div>
+
+      {/* Invoice History Table */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <h2 className="text-lg font-bold text-slate-800">Billing & Payment History</h2>
+
+        {invoices.length === 0 ? (
+          <p className="text-sm text-slate-500 py-4 text-center">No previous billing records found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-700">
+              <thead className="bg-slate-100 text-xs uppercase font-semibold text-slate-600 border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Billing Month</th>
+                  <th className="py-3 px-4">Rent</th>
+                  <th className="py-3 px-4">Water</th>
+                  <th className="py-3 px-4">Garbage/Parking</th>
+                  <th className="py-3 px-4">Total</th>
+                  <th className="py-3 px-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {invoices.map((inv) => (
+                  <tr key={inv.id} className="hover:bg-slate-50">
+                    <td className="py-3 px-4 font-semibold text-slate-900">{inv.billing_month}</td>
+                    <td className="py-3 px-4 font-mono">KES {inv.rent_amount?.toLocaleString()}</td>
+                    <td className="py-3 px-4 font-mono">KES {inv.water_amount?.toLocaleString()}</td>
+                    <td className="py-3 px-4 font-mono">
+                      KES {((inv.garbage_fee || 0) + (inv.parking_fee || 0)).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 font-bold text-slate-900 font-mono">
+                      KES {inv.total_amount?.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                          inv.status === 'PAID'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        {inv.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

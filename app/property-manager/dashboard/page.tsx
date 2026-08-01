@@ -1,272 +1,335 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { createClient } from "@/lib/supabaseClient";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
-interface MetricStats {
-  totalCollected: number;
-  totalArrears: number;
-  unassignedCount: number;
-  unassignedAmount: number;
-  totalUnits: number;
-  occupiedUnits: number;
-  occupancyRate: number;
-}
-
-interface MonthlyRevenue {
-  month: string;
-  collected: number;
-  pending: number;
-}
-
-interface OccupancyData {
+interface Property {
+  id: string;
   name: string;
-  value: number;
-  color: string;
+  water_rate_per_unit: number;
 }
 
-export default function PropertyManagerDashboard() {
-  const supabase = createClient();
+interface Unit {
+  id: string;
+  property_id: string;
+  unit_number: string;
+  rent_amount: number;
+  garbage_fee: number;
+  parking_fee: number;
+}
 
-  const [loading, setLoading] = useState(true);
-  const [metrics, setMetrics] = useState<MetricStats>({
-    totalCollected: 0,
-    totalArrears: 0,
-    unassignedCount: 0,
-    unassignedAmount: 0,
-    totalUnits: 0,
-    occupiedUnits: 0,
-    occupancyRate: 0,
-  });
+interface TenantWithProfile {
+  id: string;
+  unit_id: string;
+  profile_id: string;
+  profiles: {
+    full_name: string;
+    email: string;
+    phone: string | null;
+  };
+}
 
-  const [revenueTrend, setRevenueTrend] = useState<MonthlyRevenue[]>([]);
-  const [occupancyChartData, setOccupancyChartData] = useState<OccupancyData[]>([]);
+interface Invoice {
+  id: string;
+  tenant_id: string;
+  unit_id: string;
+  billing_month: string;
+  rent_amount: number;
+  water_amount: number;
+  garbage_fee: number;
+  parking_fee: number;
+  total_amount: number;
+  status: 'UNPAID' | 'PAID' | 'PARTIAL';
+}
+
+export default function PropertyManagerDashboard({ currentUserId }: { currentUserId?: string }) {
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [tenants, setTenants] = useState<TenantWithProfile[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // Form State: Unit Selection & Meter Reading Entry
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('');
+  const [previousReading, setPreviousReading] = useState<number>(0);
+  const [currentReading, setCurrentReading] = useState<number>(0);
+  const [billingMonth, setBillingMonth] = useState<string>(
+    new Date().toISOString().slice(0, 7) // Default YYYY-MM
+  );
 
   useEffect(() => {
-    fetchDashboardOverview();
-  }, []);
+    fetchManagerData();
+  }, [currentUserId]);
 
-  async function fetchDashboardOverview() {
+  async function fetchManagerData() {
     setLoading(true);
+
+    // Fetch properties managed by this property manager
+    let propQuery = supabase.from('properties').select('*');
+    if (currentUserId) {
+      propQuery = propQuery.eq('property_manager_id', currentUserId);
+    }
+    const { data: propsData } = await propQuery;
+    if (propsData) setProperties(propsData);
+
+    // Fetch recent invoices
+    const { data: invData } = await supabase
+      .from('invoices')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (invData) setInvoices(invData);
+
+    setLoading(false);
+  }
+
+  // Load Units & Active Tenants when Property changes
+  async function handlePropertySelect(propertyId: string) {
+    setSelectedPropertyId(propertyId);
+    setSelectedUnitId('');
+
+    if (!propertyId) {
+      setUnits([]);
+      setTenants([]);
+      return;
+    }
+
+    const { data: unitData } = await supabase
+      .from('units')
+      .select('*')
+      .eq('property_id', propertyId);
+    if (unitData) setUnits(unitData);
+
+    const { data: tenantData } = await supabase
+      .from('tenants')
+      .select('*, profiles(full_name, email, phone)')
+      .eq('property_id', propertyId)
+      .eq('is_active', true);
+    if (tenantData) setTenants(tenantData as any);
+  }
+
+  // Calculate & Generate Monthly Invoice
+  async function handleGenerateInvoice() {
+    if (!selectedPropertyId || !selectedUnitId) {
+      alert('Please select both a property and a unit.');
+      return;
+    }
+
+    const activeTenant = tenants.find((t) => t.unit_id === selectedUnitId);
+    if (!activeTenant) {
+      alert('No active tenant found assigned to this unit.');
+      return;
+    }
+
+    const unitInfo = units.find((u) => u.id === selectedUnitId);
+    const propertyInfo = properties.find((p) => p.id === selectedPropertyId);
+
+    if (!unitInfo || !propertyInfo) return;
+
+    // Water consumption calculation
+    const unitsConsumed = Math.max(0, currentReading - previousReading);
+    const waterAmount = unitsConsumed * (propertyInfo.water_rate_per_unit || 0);
+
+    const rent = unitInfo.rent_amount || 0;
+    const garbage = unitInfo.garbage_fee || 0;
+    const parking = unitInfo.parking_fee || 0;
+    const totalAmount = rent + waterAmount + garbage + parking;
+
     try {
-      // 1. Fetch Invoices Summary
-      const { data: invoices } = await supabase
-        .from("invoices")
-        .select("amount_paid, balance, status, created_at");
-
-      let collected = 0;
-      let arrears = 0;
-
-      if (invoices) {
-        invoices.forEach((inv) => {
-          collected += Number(inv.amount_paid || 0);
-          arrears += Number(inv.balance || 0);
-        });
-      }
-
-      // 2. Fetch Unassigned Payments
-      const { data: unassigned } = await supabase
-        .from("unassigned_payments")
-        .select("amount")
-        .eq("is_resolved", false);
-
-      const unassignedCnt = unassigned?.length || 0;
-      const unassignedSum = unassigned?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0;
-
-      // 3. Fetch Units for Occupancy Calculation
-      const { data: units } = await supabase
-        .from("units")
-        .select("id, is_occupied");
-
-      const totalU = units?.length || 0;
-      const occupiedU = units?.filter((u) => u.is_occupied).length || 0;
-      const vacantU = totalU - occupiedU;
-      const occRate = totalU > 0 ? Math.round((occupiedU / totalU) * 100) : 0;
-
-      setMetrics({
-        totalCollected: collected,
-        totalArrears: arrears,
-        unassignedCount: unassignedCnt,
-        unassignedAmount: unassignedSum,
-        totalUnits: totalU,
-        occupiedUnits: occupiedU,
-        occupancyRate: occRate,
+      const { error } = await supabase.from('invoices').insert({
+        property_id: selectedPropertyId,
+        unit_id: selectedUnitId,
+        tenant_id: activeTenant.id,
+        billing_month: billingMonth,
+        previous_water_reading: previousReading,
+        current_water_reading: currentReading,
+        water_amount: waterAmount,
+        rent_amount: rent,
+        garbage_fee: garbage,
+        parking_fee: parking,
+        total_amount: totalAmount,
+        status: 'UNPAID',
       });
 
-      setOccupancyChartData([
-        { name: "Occupied", value: occupiedU, color: "#10b981" },
-        { name: "Vacant", value: vacantU, color: "#ef4444" },
-      ]);
+      if (error) throw error;
 
-      // Mocked 6-month financial trajectory (or calculate dynamically from invoices.created_at)
-      setRevenueTrend([
-        { month: "Feb", collected: collected * 0.7, pending: arrears * 0.4 },
-        { month: "Mar", collected: collected * 0.8, pending: arrears * 0.3 },
-        { month: "Apr", collected: collected * 0.85, pending: arrears * 0.3 },
-        { month: "May", collected: collected * 0.9, pending: arrears * 0.25 },
-        { month: "Jun", collected: collected * 0.95, pending: arrears * 0.2 },
-        { month: "Jul", collected: collected, pending: arrears },
-      ]);
-
-    } catch (err) {
-      console.error("Failed to load property manager dashboard:", err);
-    } finally {
-      setLoading(false);
+      alert(`Invoice generated for Unit ${unitInfo.unit_number}! Total: KES ${totalAmount.toLocaleString()}`);
+      
+      // Reset meter fields
+      setPreviousReading(currentReading);
+      setCurrentReading(0);
+      fetchManagerData();
+    } catch (err: any) {
+      alert(`Error generating invoice: ${err.message}`);
     }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center text-sm font-medium">
-        Loading financial analytics...
+      <div className="p-8 text-center text-slate-500 font-medium">
+        Loading property management module...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-8">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100">Property Operations Overview</h1>
-          <p className="text-xs text-slate-400">Financial health, collections, and occupancy analytics</p>
+    <div className="max-w-6xl mx-auto p-6 space-y-8 bg-slate-50 min-h-screen">
+      {/* Header */}
+      <div className="border-b border-slate-200 pb-4">
+        <h1 className="text-2xl font-bold text-slate-900">Property Manager Workspace</h1>
+        <p className="text-sm text-slate-500">
+          Record utility readings, issue monthly billing, and monitor unit occupancy
+        </p>
+      </div>
+
+      {/* Quick Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500 uppercase">Assigned Properties</p>
+          <p className="text-3xl font-extrabold text-slate-900 mt-2">{properties.length}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/unassigned-payments"
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-lg transition"
-          >
-            Reconcile Payments ({metrics.unassignedCount})
-          </Link>
-          <button
-            onClick={fetchDashboardOverview}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg border border-slate-700 transition"
-          >
-            Refresh
-          </button>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500 uppercase">Managed Units</p>
+          <p className="text-3xl font-extrabold text-blue-600 mt-2">{units.length}</p>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-xs font-semibold text-slate-500 uppercase">Active Invoices</p>
+          <p className="text-3xl font-extrabold text-emerald-600 mt-2">{invoices.length}</p>
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Collections */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2">
-          <span className="text-xs font-semibold text-slate-400">Total Collections</span>
-          <div className="text-2xl font-bold text-emerald-400 font-mono">
-            KSh {metrics.totalCollected.toLocaleString()}
-          </div>
-          <p className="text-[11px] text-slate-500">Collected from active invoices</p>
-        </div>
-
-        {/* Pending Arrears */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2">
-          <span className="text-xs font-semibold text-slate-400">Pending Arrears</span>
-          <div className="text-2xl font-bold text-rose-400 font-mono">
-            KSh {metrics.totalArrears.toLocaleString()}
-          </div>
-          <p className="text-[11px] text-slate-500">Outstanding balance across units</p>
-        </div>
-
-        {/* Unassigned M-Pesa */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2">
-          <span className="text-xs font-semibold text-slate-400">Unassigned M-Pesa</span>
-          <div className="text-2xl font-bold text-amber-400 font-mono">
-            KSh {metrics.unassignedAmount.toLocaleString()}
-          </div>
-          <p className="text-[11px] text-amber-500/90 font-medium">
-            {metrics.unassignedCount} transactions pending manual resolution
+      {/* Meter Reading & Monthly Invoice Generator */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-bold text-slate-800">Meter Readings & Invoice Generation</h2>
+          <p className="text-xs text-slate-500">
+            Input water meter readings to compile full billing (Rent + Water + Garbage + Parking)
           </p>
         </div>
 
-        {/* Occupancy Rate */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-2">
-          <span className="text-xs font-semibold text-slate-400">Portfolio Occupancy</span>
-          <div className="text-2xl font-bold text-blue-400 font-mono">
-            {metrics.occupancyRate}%
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase">Property</label>
+            <select
+              value={selectedPropertyId}
+              onChange={(e) => handlePropertySelect(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">-- Select Property --</option>
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </div>
-          <p className="text-[11px] text-slate-500">
-            {metrics.occupiedUnits} of {metrics.totalUnits} Units Occupied
-          </p>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase">Unit</label>
+            <select
+              value={selectedUnitId}
+              onChange={(e) => setSelectedUnitId(e.target.value)}
+              disabled={!selectedPropertyId}
+              className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              <option value="">-- Select Unit --</option>
+              {units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  Unit {u.unit_number}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase">Billing Month</label>
+            <input
+              type="month"
+              value={billingMonth}
+              onChange={(e) => setBillingMonth(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase">Previous Water Reading</label>
+            <input
+              type="number"
+              value={previousReading}
+              onChange={(e) => setPreviousReading(Number(e.target.value))}
+              className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase">Current Water Reading</label>
+            <input
+              type="number"
+              value={currentReading}
+              onChange={(e) => setCurrentReading(Number(e.target.value))}
+              className="w-full border border-slate-300 rounded-lg p-2.5 mt-1 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <button
+              onClick={handleGenerateInvoice}
+              className="w-full bg-slate-900 text-white font-semibold py-2.5 rounded-lg text-sm hover:bg-slate-800 transition shadow-sm"
+            >
+              Generate Monthly Invoice
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Analytics Section: Graphs */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Revenue Collection vs Arrears Bar Chart */}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-sm font-bold text-slate-200">Revenue Collections & Arrears Trend</h2>
-            <span className="text-xs text-slate-500">6-Month View</span>
-          </div>
+      {/* Generated Invoices Ledger */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <h2 className="text-lg font-bold text-slate-800">Recent Invoices & Payment Ledger</h2>
 
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={revenueTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                <XAxis dataKey="month" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "8px", fontSize: "12px" }}
-                  formatter={(value: any) => [`KSh ${Number(value).toLocaleString()}`, "Amount"]}
-                />
-                <Bar dataKey="collected" fill="#10b981" radius={[4, 4, 0, 0]} name="Collected" />
-                <Bar dataKey="pending" fill="#f43f5e" radius={[4, 4, 0, 0]} name="Arrears" />
-              </BarChart>
-            </ResponsiveContainer>
+        {invoices.length === 0 ? (
+          <p className="text-sm text-slate-500 py-4 text-center">No invoices generated yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-700">
+              <thead className="bg-slate-100 text-xs uppercase font-semibold text-slate-600 border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Billing Period</th>
+                  <th className="py-3 px-4">Rent</th>
+                  <th className="py-3 px-4">Water</th>
+                  <th className="py-3 px-4">Garbage/Parking</th>
+                  <th className="py-3 px-4">Total Amount</th>
+                  <th className="py-3 px-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {invoices.map((inv) => (
+                  <tr key={inv.id} className="hover:bg-slate-50">
+                    <td className="py-3 px-4 font-semibold text-slate-900">{inv.billing_month}</td>
+                    <td className="py-3 px-4 font-mono">KES {inv.rent_amount?.toLocaleString()}</td>
+                    <td className="py-3 px-4 font-mono">KES {inv.water_amount?.toLocaleString()}</td>
+                    <td className="py-3 px-4 font-mono">
+                      KES {((inv.garbage_fee || 0) + (inv.parking_fee || 0)).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 font-bold text-slate-900 font-mono">
+                      KES {inv.total_amount?.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                          inv.status === 'PAID'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        {inv.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        {/* Occupancy Pie Chart */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4 flex flex-col justify-between">
-          <h2 className="text-sm font-bold text-slate-200">Unit Occupancy Ratio</h2>
-
-          <div className="h-56 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={occupancyChartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {occupancyChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", borderColor: "#334155", borderRadius: "8px", fontSize: "12px" }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="flex justify-center gap-6 text-xs pt-2 border-t border-slate-800">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
-              <span className="text-slate-300">Occupied ({metrics.occupiedUnits})</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-rose-500"></span>
-              <span className="text-slate-300">Vacant ({metrics.totalUnits - metrics.occupiedUnits})</span>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

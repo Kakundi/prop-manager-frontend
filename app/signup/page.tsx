@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabaseClient";
+// ✅ Import the initialized `supabase` object instead of `createClient`
+import { supabase } from "@/lib/supabaseClient";
 
 export default function SignupPage() {
   const router = useRouter();
-  const supabase = createClient();
+  
+  // ❌ Removed `const supabase = createClient();` — `supabase` is already ready to use!
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -36,7 +38,6 @@ export default function SignupPage() {
       });
 
       if (error) {
-        // Explicit string conversion prevents rendering raw objects `{}`
         setErrorMsg(error.message || "Failed to create account.");
         setLoading(false);
         return;
