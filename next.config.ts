@@ -11,6 +11,8 @@ const cspHeader = `
 `;
 
 const nextConfig: NextConfig = {
+  typedRoutes: false,
+
   async headers() {
     return [
       {

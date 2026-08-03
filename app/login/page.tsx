@@ -60,7 +60,7 @@ export default function LoginPage() {
             break;
 
           case "caretaker":
-            router.push("/caretaker/dashboard");
+            router.push("/caretaker");
             break;
 
           case "tenant":

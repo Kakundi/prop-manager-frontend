@@ -1,7 +1,17 @@
-import { createClient } from '@supabase/supabase-js';
+// lib/supabaseClient.ts
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Ensure "export" is placed directly before const
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables in .env.local');
+}
+
+// 1. Export standard singleton client instance
+export const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey);
+
+// 2. Export createClient function for components that initialize it directly
+export function createClient() {
+  return supabase;
+}

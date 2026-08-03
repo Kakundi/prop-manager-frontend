@@ -1,0 +1,13 @@
+{
+  "javascript.preferences.includePackageJsonAutoImports": "auto",
+  "js/ts.preferences.includePackageJsonAutoImports": "auto",
+  "files.watcherExclude": {
+    "**/.next/**": true
+  },
+  "search.exclude": {
+    "**/.next": true
+  },
+  "js/ts.tsserver.watchOptions": {
+    "excludeDirectories": ["**/node_modules", "**/.next"]
+  }
+}
