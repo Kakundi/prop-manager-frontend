@@ -47,7 +47,7 @@ export default function LoginPage() {
 
         switch (normalizedRole) {
           case "super_admin":
-            router.push("/super-admin/dashboard");
+            router.push("/super-admin");
             break;
 
           case "property_manager":
@@ -56,7 +56,7 @@ export default function LoginPage() {
 
           case "owner":
           case "property_owner":
-            router.push("/owner/dashboard");
+            router.push("/owner");
             break;
 
           case "caretaker":
@@ -64,11 +64,11 @@ export default function LoginPage() {
             break;
 
           case "tenant":
-            router.push("/tenant/dashboard");
+            router.push("/tenant");
             break;
 
           default:
-            router.push("/property-manager/dashboard");
+            router.push("/property-manager");
             break;
         }
       }
