@@ -51,7 +51,7 @@ export default function LoginPage() {
             break;
 
           case "property_manager":
-            router.push("/property-manager/dashboard");
+            router.push("/property-manager");
             break;
 
           case "owner":
