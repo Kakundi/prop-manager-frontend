@@ -2,17 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { InvoiceMetrics } from '../types';
 
-interface InvoiceMetrics {
-  paidAmount: number;
-  paidCount: number;
-  unpaidAmount: number;
-  unpaidCount: number;
-  overdueAmount: number;
-  overdueCount: number;
-}
-
-export default function SuperAdminDashboard() {
+export const DashboardTab: React.FC = () => {
   const [metrics, setMetrics] = useState<InvoiceMetrics>({
     paidAmount: 0,
     paidCount: 0,
@@ -60,8 +52,10 @@ export default function SuperAdminDashboard() {
     fetchMetrics();
   }, []);
 
+  const totalInvoices = metrics.paidCount + metrics.unpaidCount + metrics.overdueCount;
+
   return (
-    <div className="p-6 space-y-6 bg-slate-950 text-slate-100 min-h-screen">
+    <div className="space-y-6">
       {/* HERO / WELCOME */}
       <div>
         <h1 className="text-2xl font-bold text-white tracking-tight">
@@ -127,42 +121,23 @@ export default function SuperAdminDashboard() {
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
         <h2 className="text-sm font-bold text-white">Revenue Distribution Breakdown</h2>
 
-        {/* Visual Progress Bar */}
         <div className="space-y-2">
           <div className="h-4 w-full bg-slate-950 rounded-full overflow-hidden flex">
             <div
               style={{
-                width: `${
-                  metrics.paidCount + metrics.unpaidCount + metrics.overdueCount > 0
-                    ? (metrics.paidCount /
-                        (metrics.paidCount + metrics.unpaidCount + metrics.overdueCount)) *
-                      100
-                    : 0
-                }%`,
+                width: `${totalInvoices > 0 ? (metrics.paidCount / totalInvoices) * 100 : 0}%`,
               }}
               className="bg-emerald-500 transition-all"
             ></div>
             <div
               style={{
-                width: `${
-                  metrics.paidCount + metrics.unpaidCount + metrics.overdueCount > 0
-                    ? (metrics.unpaidCount /
-                        (metrics.paidCount + metrics.unpaidCount + metrics.overdueCount)) *
-                      100
-                    : 0
-                }%`,
+                width: `${totalInvoices > 0 ? (metrics.unpaidCount / totalInvoices) * 100 : 0}%`,
               }}
               className="bg-amber-500 transition-all"
             ></div>
             <div
               style={{
-                width: `${
-                  metrics.paidCount + metrics.unpaidCount + metrics.overdueCount > 0
-                    ? (metrics.overdueCount /
-                        (metrics.paidCount + metrics.unpaidCount + metrics.overdueCount)) *
-                      100
-                    : 0
-                }%`,
+                width: `${totalInvoices > 0 ? (metrics.overdueCount / totalInvoices) * 100 : 0}%`,
               }}
               className="bg-rose-500 transition-all"
             ></div>
@@ -186,4 +161,4 @@ export default function SuperAdminDashboard() {
       </div>
     </div>
   );
-}
+};

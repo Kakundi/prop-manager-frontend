@@ -1,10 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { SuperAdminTab } from '../types';
 
-export default function UnassignedPaymentsHub() {
+interface HubProps {
+  setActiveTab: (tab: SuperAdminTab) => void;
+}
+
+export const UnassignedPaymentsHubTab: React.FC<HubProps> = ({ setActiveTab }) => {
   const [tenantCount, setTenantCount] = useState<number>(0);
   const [saasCount, setSaasCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
@@ -33,7 +37,7 @@ export default function UnassignedPaymentsHub() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6 bg-slate-950 text-slate-100 min-h-screen">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white tracking-tight">
           Unassigned Payments Hub
@@ -44,7 +48,7 @@ export default function UnassignedPaymentsHub() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Card 1: Tenant Payments */}
+        {/* Tenant Payments Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between hover:border-indigo-500/50 transition shadow-xl">
           <div>
             <div className="flex justify-between items-start">
@@ -62,15 +66,15 @@ export default function UnassignedPaymentsHub() {
               M-Pesa and bank transactions originating from property tenants where unit numbers or tenant details were mismatched. Includes Full Name, Unit, and Property context.
             </p>
           </div>
-          <Link
-            href="/super-admin/unassigned-payments/tenant"
+          <button
+            onClick={() => setActiveTab('unassigned-tenant-payments')}
             className="mt-6 w-full text-center bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 rounded-xl transition shadow-lg shadow-indigo-600/20 block"
           >
             Review Tenant Payments &rarr;
-          </Link>
+          </button>
         </div>
 
-        {/* Card 2: SaaS Subscriber Payments */}
+        {/* SaaS Payments Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between hover:border-emerald-500/50 transition shadow-xl">
           <div>
             <div className="flex justify-between items-start">
@@ -88,14 +92,14 @@ export default function UnassignedPaymentsHub() {
               Direct payments from Property Managers and Owners for platform subscriptions whose transaction codes or sender numbers did not automatically align with their profiles.
             </p>
           </div>
-          <Link
-            href="/super-admin/unassigned-payments/saas"
+          <button
+            onClick={() => setActiveTab('unassigned-saas-payments')}
             className="mt-6 w-full text-center bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-2.5 rounded-xl transition shadow-lg shadow-emerald-600/20 block"
           >
             Review SaaS Payments &rarr;
-          </Link>
+          </button>
         </div>
       </div>
     </div>
   );
-}
+};
