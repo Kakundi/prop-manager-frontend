@@ -14,7 +14,6 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-// Import tab components
 import { DashboardTab } from './tabs/DashboardTab';
 import { AddPropertyTab } from './tabs/AddPropertyTab';
 import { UserManagementTab } from './tabs/UserManagementTab';
@@ -22,21 +21,14 @@ import { TenantsTab } from './tabs/TenantsTab';
 import { UnassignedPaymentsTab } from './tabs/UnassignedPaymentsTab';
 import { SubscriptionsTab } from './tabs/SubscriptionsTab';
 
-export interface UserProfile {
-  id?: string;
-  full_name?: string;
-  email?: string;
-  role?: string;
-}
-
 type TabType = 'dashboard' | 'add-property' | 'user-management' | 'tenants' | 'unassigned-payments' | 'subscriptions';
 
 export default function PropertyManagerPage() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [fullName, setFullName] = useState<string>('');
   const [loadingUser, setLoadingUser] = useState<boolean>(true);
 
-  // Fetch authenticated user profile directly from database/session endpoint
+  // Robust profile fetcher checking all DB response shapes
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
@@ -45,12 +37,22 @@ export default function PropertyManagerPage() {
         
         if (res.ok) {
           const data = await res.json();
-          if (data?.user) {
-            setUser(data.user);
+          
+          // Check standard database profile structures
+          const extractedName = 
+            data?.full_name || 
+            data?.user?.full_name || 
+            data?.profile?.full_name || 
+            data?.user?.user_metadata?.full_name ||
+            data?.user?.name || 
+            '';
+
+          if (extractedName.trim()) {
+            setFullName(extractedName.trim());
           }
         }
       } catch (err) {
-        console.error('Error fetching user profile from database:', err);
+        console.error('Database profile fetch failed:', err);
       } finally {
         setLoadingUser(false);
       }
@@ -58,9 +60,6 @@ export default function PropertyManagerPage() {
 
     fetchUserProfile();
   }, []);
-
-  // Format real full name directly from DB record, fallback gracefully if loading
-  const realFullName = user?.full_name?.trim() ? user.full_name : null;
 
   const navigationItems = [
     { id: 'dashboard' as TabType, label: 'Dashboard', icon: LayoutDashboard },
@@ -76,7 +75,6 @@ export default function PropertyManagerPage() {
       {/* SIDEBAR NAVIGATION */}
       <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between border-r border-slate-800 shrink-0">
         <div>
-          {/* App Brand Header */}
           <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-800 bg-slate-950/40">
             <div className="p-2 bg-blue-600 rounded-lg text-white">
               <Building2 size={20} />
@@ -87,7 +85,6 @@ export default function PropertyManagerPage() {
             </div>
           </div>
 
-          {/* Navigation Links */}
           <nav className="p-4 space-y-1">
             <div className="px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
               Main Menu
@@ -116,15 +113,15 @@ export default function PropertyManagerPage() {
           </nav>
         </div>
 
-        {/* User Sidebar Footer */}
+        {/* SIDEBAR FOOTER */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/30">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0">
-              {loadingUser ? <Loader2 size={14} className="animate-spin" /> : (realFullName ? realFullName.charAt(0) : 'U')}
+              {loadingUser ? <Loader2 size={14} className="animate-spin" /> : (fullName ? fullName.charAt(0) : 'M')}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-white truncate">
-                {loadingUser ? 'Loading profile...' : (realFullName || 'Authenticated User')}
+                {loadingUser ? 'Loading profile...' : (fullName || 'Property Manager')}
               </p>
               <p className="text-[11px] text-slate-400 truncate flex items-center gap-1">
                 <ShieldCheck size={12} className="text-emerald-400 inline" /> Property Manager
@@ -134,10 +131,10 @@ export default function PropertyManagerPage() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
+      {/* MAIN WORKSPACE */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         
-        {/* TOP WORKSPACE HEADER / HERO BANNER (Consistent with portal pages) */}
+        {/* HERO HEADER */}
         <header className="bg-slate-900 border-b border-slate-800 px-8 py-6 text-white shrink-0 shadow-md">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
@@ -150,10 +147,10 @@ export default function PropertyManagerPage() {
                 <span className="text-blue-400">
                   {loadingUser ? (
                     <span className="inline-flex items-center gap-2 text-slate-300 text-lg">
-                      <Loader2 size={18} className="animate-spin" /> Fetching DB user profile...
+                      <Loader2 size={18} className="animate-spin" /> Fetching database profile...
                     </span>
                   ) : (
-                    realFullName || 'Property Manager'
+                    fullName || 'Property Manager'
                   )}
                 </span> 👋
               </h1>
@@ -164,7 +161,7 @@ export default function PropertyManagerPage() {
           </div>
         </header>
 
-        {/* TAB WORKSPACE */}
+        {/* WORKSPACE CONTENT */}
         <main className="flex-1 overflow-y-auto p-8 bg-slate-50/60">
           <div className="max-w-7xl mx-auto">
             {activeTab === 'dashboard' && <DashboardTab />}
