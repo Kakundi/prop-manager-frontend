@@ -1,3 +1,5 @@
+// app/owner/types.ts
+
 export type OwnerTab =
   | 'dashboard'
   | 'add-property'
@@ -6,34 +8,51 @@ export type OwnerTab =
   | 'unassigned-payments'
   | 'subscription';
 
-export interface OwnerPropertySummary {
+export type UserRole = 'tenant' | 'caretaker' | 'owner';
+
+export interface PropertyOption {
   id: string;
   name: string;
-  location: string;
-  total_units: number;
-  occupied_units: number;
-  monthly_revenue: number;
+  units?: string[];
 }
 
-export interface OwnerTenantRecord {
+export interface ManagedUser {
   id: string;
   full_name: string;
-  unit_number: string;
-  property_name: string;
+  email: string;
   phone: string;
-  rent_status: 'paid' | 'overdue' | 'pending';
+  role: UserRole;
+  property_name?: string;
+  unit_number?: string;
+  status: 'active' | 'pending';
+  invited_at: string;
+}
+
+export interface SubscriptionInvoice {
+  id: string;
+  description?: string;
+  amount: number;
+  status: 'paid' | 'unpaid' | 'overdue';
+  date: string;
+  due_date?: string;
+  pdf_url?: string;
+}
+
+export interface TenantPaymentHistory {
+  id: string;
+  tenant_name: string;
+  property_name: string;
+  unit_number: string;
+  amount: number;
+  status: 'paid' | 'unpaid' | 'overdue' | 'partial';
+  date: string;
 }
 
 export interface UnassignedPayment {
   id: string;
+  sender_name?: string;
+  phone?: string;
+  reference: string;
   amount: number;
-  payment_reference: string;
-  payment_date: string;
-  source_phone: string;
-}
-
-export interface SubscriptionStatus {
-  tier: string;
-  status: 'active' | 'past_due' | 'canceled';
-  current_period_end: string;
+  date: string;
 }

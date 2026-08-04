@@ -14,45 +14,79 @@ import { createClient } from '@/lib/supabaseClient';
 
 export default function OwnerPage() {
   const [activeTab, setActiveTab] = useState<OwnerTab>('dashboard');
-  const [ownerFullName, setOwnerFullName] = useState<string>('Brian Nyamai');
+  const [ownerFullName, setOwnerFullName] = useState<string>('Property Owner');
 
   useEffect(() => {
+    let isMounted = true;
+
     async function fetchProfile() {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
+      try {
+        const supabase = createClient();
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) return;
+
+        const { data, error: profileError } = await supabase
           .from('profiles')
           .select('full_name')
           .eq('id', user.id)
           .single();
 
-        if (data?.full_name) {
+        if (profileError) {
+          console.error('Error fetching owner profile:', profileError.message);
+          return;
+        }
+
+        if (isMounted && data?.full_name) {
           setOwnerFullName(data.full_name);
         }
+      } catch (err: unknown) {
+        console.error('Failed to resolve owner authentication context:', err);
       }
     }
+
     fetchProfile();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return <DashboardTab />;
+      case 'add-property':
+        return <AddPropertyTab />;
+      case 'users':
+        return <UserManagementTab />;
+      case 'tenants':
+        return <TenantsTab />;
+      case 'unassigned-payments':
+        return <UnassignedPaymentsTab />;
+      case 'subscription':
+        return <SubscriptionsTab />;
+      default:
+        return <DashboardTab />;
+    }
+  };
+
   return (
-    <div className="flex h-screen bg-gray-100 font-sans">
-      {/* 1. SIDEBAR MENU */}
+    <div className="flex h-screen bg-gray-100 font-sans text-gray-900 overflow-hidden">
+      {/* 1. SIDEBAR NAVIGATION */}
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* 2. MAIN LAYOUT AREA */}
-      <main className="flex-1 overflow-y-auto">
-        {/* HERO HEADER */}
+      <main className="flex-1 flex flex-col h-full overflow-y-auto">
+        {/* TOP HEADER */}
         <Header fullName={ownerFullName} />
 
-        {/* TAB CONTENT AREA */}
-        <div className="p-8">
-          {activeTab === 'dashboard' && <DashboardTab />}
-          {activeTab === 'add-property' && <AddPropertyTab />}
-          {activeTab === 'users' && <UserManagementTab />}
-          {activeTab === 'tenants' && <TenantsTab />}
-          {activeTab === 'unassigned-payments' && <UnassignedPaymentsTab />}
-          {activeTab === 'subscription' && <SubscriptionsTab />}
+        {/* TAB CONTENT WRAPPER */}
+        <div className="p-6 md:p-8 flex-1 max-w-7xl w-full mx-auto space-y-6">
+          {renderTabContent()}
         </div>
       </main>
     </div>

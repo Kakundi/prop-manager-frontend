@@ -1,87 +1,331 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabaseClient';
-import { Loader2, ShieldCheck, UserPlus } from 'lucide-react';
-
-interface StaffUser {
-  id: string;
-  full_name: string;
-  email: string;
-  role: string;
-}
+import React, { useState, useEffect } from 'react';
+import { UserPlus, Shield, Home, Mail, CheckCircle, Clock, Loader2, AlertCircle } from 'lucide-react';
+import { UserRole, PropertyOption, ManagedUser } from '../types';
 
 export const UserManagementTab: React.FC = () => {
-  const supabase = createClient();
-  const [users, setUsers] = useState<StaffUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [availableProperties, setAvailableProperties] = useState<PropertyOption[]>([]);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [fetching, setFetching] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Form states
+  const [fullName, setFullName] = useState<string>('');
+  const [email, setEmail] = useState<string>('');
+  const [phone, setPhone] = useState<string>('');
+  const [role, setRole] = useState<UserRole>('tenant');
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
+  const [selectedUnit, setSelectedUnit] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const fetchInitialData = async () => {
+    try {
+      setFetching(true);
+      setFetchError(null);
+      const [propsRes, usersRes] = await Promise.all([
+        fetch('/property-manager/api/properties', { cache: 'no-store' }),
+        fetch('/property-manager/api/users', { cache: 'no-store' }),
+      ]);
+
+      if (!propsRes.ok || !usersRes.ok) {
+        throw new Error('Failed to load properties or user directory from database.');
+      }
+
+      const propsData = await propsRes.json();
+      const loadedProps: PropertyOption[] = propsData.properties || [];
+      setAvailableProperties(loadedProps);
+
+      if (loadedProps.length > 0 && !selectedPropertyId) {
+        setSelectedPropertyId(loadedProps[0].id);
+      }
+
+      const usersData = await usersRes.json();
+      setUsers(usersData.users || []);
+    } catch (err: unknown) {
+      console.error('Failed to load user management data from database:', err);
+      const message = err instanceof Error ? err.message : 'Unable to connect to database.';
+      setFetchError(message);
+    } finally {
+      setFetching(false);
+    }
+  };
 
   useEffect(() => {
-    async function fetchUsers() {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('id, full_name, email, role')
-          .eq('assigned_owner_id', user.id);
-
-        setUsers(data || []);
-      }
-      setLoading(false);
-    }
-    fetchUsers();
+    fetchInitialData();
   }, []);
 
-  if (loading) {
+  const currentProperty = availableProperties.find((p) => p.id === selectedPropertyId);
+
+  const handleInviteUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setFeedback(null);
+
+    try {
+      const res = await fetch('/property-manager/api/invite-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: fullName,
+          email,
+          phone,
+          role,
+          property_id: selectedPropertyId,
+          unit_number: role === 'tenant' ? selectedUnit : undefined,
+        }),
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to send invite.');
+
+      setFeedback({
+        type: 'success',
+        msg: `Verification link sent successfully to ${email}. Record saved to database.`,
+      });
+
+      // Reset form & reload records
+      setFullName('');
+      setEmail('');
+      setPhone('');
+      setSelectedUnit('');
+      fetchInitialData();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Something went wrong.';
+      setFeedback({ type: 'error', msg: message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (fetching) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="p-12 bg-white rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 gap-2 shadow-sm">
+        <Loader2 className="animate-spin text-blue-600" size={24} />
+        <span>Loading properties and user directory from database...</span>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center gap-2">
+        <AlertCircle size={18} />
+        <span>{fetchError}</span>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-800">Caretakers & Staff Management</h2>
-          <p className="text-xs text-gray-500">Manage delegates assigned to manage your properties.</p>
+    <div className="space-y-8">
+      {/* 1. ADD NEW USER FORM */}
+      <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+            <UserPlus size={22} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">Add & Assign New User</h2>
+            <p className="text-sm text-gray-500">
+              Invite a Caretaker or Tenant to your properties. An automated verification link will be emailed to set up their password.
+            </p>
+          </div>
         </div>
+
+        {feedback && (
+          <div
+            className={`p-4 rounded-lg text-sm mb-6 flex items-center gap-2 ${
+              feedback.type === 'success'
+                ? 'bg-green-50 border border-green-200 text-green-800'
+                : 'bg-red-50 border border-red-200 text-red-800'
+            }`}
+          >
+            {feedback.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+            {feedback.msg}
+          </div>
+        )}
+
+        <form onSubmit={handleInviteUser} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Full Name</label>
+              <input
+                type="text"
+                required
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="e.g. John Doe"
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Email Address (For Verification)
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="john@example.com"
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Phone Number</label>
+              <input
+                type="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+254 712 345678"
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Role Assignment</label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as UserRole)}
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              >
+                <option value="tenant">Tenant</option>
+                <option value="caretaker">Caretaker</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Select Building / Property
+              </label>
+              <select
+                required
+                value={selectedPropertyId}
+                onChange={(e) => {
+                  setSelectedPropertyId(e.target.value);
+                  setSelectedUnit('');
+                }}
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              >
+                <option value="">-- Choose Property --</option>
+                {availableProperties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {role === 'tenant' && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Assign Unit</label>
+                <select
+                  required={role === 'tenant'}
+                  value={selectedUnit}
+                  onChange={(e) => setSelectedUnit(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                >
+                  <option value="">-- Select Unit --</option>
+                  {currentProperty?.units?.map((unit: string) => (
+                    <option key={unit} value={unit}>
+                      {unit}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-medium px-8 py-3 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="animate-spin" size={18} />
+                Sending Verification Link...
+              </>
+            ) : (
+              <>
+                <Mail size={18} />
+                Send Verification Link & Add User
+              </>
+            )}
+          </button>
+        </form>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50 text-gray-500 text-xs uppercase font-medium border-b border-gray-200">
-              <th className="px-6 py-3">Full Name</th>
-              <th className="px-6 py-3">Email</th>
-              <th className="px-6 py-3">Assigned Role</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 text-sm">
-            {users.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="px-6 py-8 text-center text-gray-500">
-                  No caretakers or staff assigned under your owner profile.
-                </td>
-              </tr>
-            ) : (
-              users.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{u.full_name}</td>
-                  <td className="px-6 py-4 text-gray-500">{u.email}</td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      {u.role}
-                    </span>
-                  </td>
+      {/* 2. ASSIGNED USERS DIRECTORY */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-6 border-b border-gray-200">
+          <h3 className="text-lg font-bold text-gray-800">Managed Users & Roles</h3>
+          <p className="text-sm text-gray-500">
+            Caretakers and Tenants currently assigned to your properties in the database.
+          </p>
+        </div>
+
+        {users.length === 0 ? (
+          <div className="p-12 text-center text-gray-500 text-sm">
+            No registered caretakers or tenants found in the database.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">
+                  <th className="p-4">User</th>
+                  <th className="p-4">Role</th>
+                  <th className="p-4">Assigned Building</th>
+                  <th className="p-4">Unit</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4">Invited Date</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody className="divide-y divide-gray-200 text-sm">
+                {users.map((usr) => (
+                  <tr key={usr.id}>
+                    <td className="p-4">
+                      <div className="font-semibold text-gray-900">{usr.full_name}</div>
+                      <div className="text-xs text-gray-500">{usr.email} | {usr.phone}</div>
+                    </td>
+                    <td className="p-4">
+                      {usr.role === 'caretaker' ? (
+                        <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-xs px-2.5 py-1 rounded-full font-medium">
+                          <Shield size={12} /> Caretaker
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-medium">
+                          <Home size={12} /> Tenant
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-4 text-gray-700 font-medium">{usr.property_name || 'N/A'}</td>
+                    <td className="p-4 text-gray-600">{usr.unit_number || 'N/A (All Building)'}</td>
+                    <td className="p-4">
+                      {usr.status === 'active' ? (
+                        <span className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-medium">
+                          <CheckCircle size={12} /> Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-medium">
+                          <Clock size={12} /> Pending Password
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-4 text-gray-500">{usr.invited_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

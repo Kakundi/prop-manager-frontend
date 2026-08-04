@@ -1,109 +1,329 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabaseClient';
-import { Building2, Users, DollarSign, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { 
+  Building2, 
+  Home, 
+  UserCheck, 
+  UserX, 
+  CheckCircle2, 
+  Clock, 
+  AlertTriangle, 
+  PieChart as PieChartIcon, 
+  Loader2, 
+  RefreshCw 
+} from 'lucide-react';
+
+export interface PropertyFinancials {
+  paidInvoices: number;
+  unpaidInvoices: number;
+  overdueInvoices: number;
+  partialPayments: number;
+  totalPaidAmount: number;
+  totalUnpaidAmount: number;
+  totalOverdueAmount: number;
+  totalPartialAmount: number;
+}
+
+export interface PropertyDashboardData {
+  propertyId: string;
+  propertyName: string;
+  totalUnits: number;
+  occupiedUnits: number;
+  vacantUnits: number;
+  financials: PropertyFinancials;
+}
 
 export const DashboardTab: React.FC = () => {
-  const supabase = createClient();
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalProperties: 0,
-    totalUnits: 0,
-    occupiedUnits: 0,
-    activeTenants: 0,
-  });
+  const [properties, setProperties] = useState<PropertyDashboardData[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadDashboardData() {
+  const fetchDashboardData = async () => {
+    try {
       setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        const { data: props } = await supabase
-          .from('properties')
-          .select('id, total_units, occupied_units')
-          .eq('owner_id', user.id);
-
-        if (props) {
-          const totalProps = props.length;
-          const totalUnits = props.reduce((acc, curr) => acc + (curr.total_units || 0), 0);
-          const occupiedUnits = props.reduce((acc, curr) => acc + (curr.occupied_units || 0), 0);
-
-          setStats({
-            totalProperties: totalProps,
-            totalUnits,
-            occupiedUnits,
-            activeTenants: occupiedUnits,
-          });
-        }
+      setError(null);
+      
+      // Fallback endpoint handler to support /owner or /property-manager database endpoints
+      let res = await fetch('/owner/api/properties-overview', { cache: 'no-store' });
+      if (!res.ok) {
+        res = await fetch('/property-manager/api/properties-overview', { cache: 'no-store' });
       }
+
+      if (!res.ok) {
+        throw new Error('Unable to connect to property records database.');
+      }
+
+      const data = await res.json();
+      setProperties(data.properties || data || []);
+    } catch (err: any) {
+      console.error('Error fetching dashboard metrics:', err);
+      setError(err.message || 'Failed to fetch dashboard data.');
+    } finally {
       setLoading(false);
     }
+  };
 
-    loadDashboardData();
+  useEffect(() => {
+    fetchDashboardData();
   }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="bg-white rounded-xl border border-gray-200 p-12 flex flex-col items-center justify-center text-gray-500 gap-3 shadow-sm">
+        <Loader2 className="animate-spin text-blue-600" size={28} />
+        <span className="text-sm font-medium">Loading live property metrics from database...</span>
       </div>
     );
   }
 
-  const statCards = [
-    {
-      title: 'Properties',
-      value: stats.totalProperties,
-      icon: Building2,
-      color: 'text-blue-600 bg-blue-50',
-    },
-    {
-      title: 'Total Units',
-      value: stats.totalUnits,
-      icon: Building2,
-      color: 'text-purple-600 bg-purple-50',
-    },
-    {
-      title: 'Occupied Units',
-      value: stats.occupiedUnits,
-      icon: Users,
-      color: 'text-emerald-600 bg-emerald-50',
-    },
-    {
-      title: 'Occupancy Rate',
-      value: `${stats.totalUnits ? Math.round((stats.occupiedUnits / stats.totalUnits) * 100) : 0}%`,
-      icon: DollarSign,
-      color: 'text-amber-600 bg-amber-50',
-    },
-  ];
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-8 text-center space-y-4 shadow-sm">
+        <div className="inline-flex p-3 bg-red-50 text-red-600 rounded-full">
+          <AlertTriangle size={24} />
+        </div>
+        <p className="text-sm text-red-600 font-medium">{error}</p>
+        <button
+          onClick={fetchDashboardData}
+          className="inline-flex items-center gap-2 text-xs font-semibold px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+        >
+          <RefreshCw size={14} /> Retry Database Query
+        </button>
+      </div>
+    );
+  }
+
+  if (properties.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center space-y-3">
+        <Building2 size={36} className="mx-auto text-gray-400" />
+        <h3 className="text-base font-bold text-gray-700">No Record Found</h3>
+        <p className="text-xs text-gray-500 max-w-sm mx-auto">
+          No property records or unit analytics were found in the database. Add properties in the Add Property tab to view dashboard analytics.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={card.title}
-              className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between"
-            >
-              <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  {card.title}
-                </p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{card.value}</p>
+    <div className="space-y-10">
+      <div className="flex items-center justify-between bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Owner Dashboard Overview</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Real-time breakdown of units, occupancy rates, and financial invoice statuses per property.
+          </p>
+        </div>
+        <button
+          onClick={fetchDashboardData}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition"
+        >
+          <RefreshCw size={14} /> Refresh Records
+        </button>
+      </div>
+
+      {/* RENDER PER-PROPERTY DASHBOARD SECTION */}
+      {properties.map((property) => {
+        const { financials } = property;
+        const totalInvoicesCount =
+          financials.paidInvoices +
+          financials.unpaidInvoices +
+          financials.overdueInvoices +
+          financials.partialPayments;
+
+        // Financial distribution percentage calculations for custom CSS bar charts
+        const getPct = (val: number) =>
+          totalInvoicesCount > 0 ? ((val / totalInvoicesCount) * 100).toFixed(1) : '0';
+
+        const paidPct = Number(getPct(financials.paidInvoices));
+        const unpaidPct = Number(getPct(financials.unpaidInvoices));
+        const overduePct = Number(getPct(financials.overdueInvoices));
+        const partialPct = Number(getPct(financials.partialPayments));
+
+        return (
+          <div
+            key={property.propertyId || property.propertyName}
+            className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden space-y-6 p-6"
+          >
+            {/* PROPERTY HEADER */}
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
+                  <Building2 size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">{property.propertyName || 'Unnamed Property'}</h3>
+                  <span className="text-xs text-gray-400">Database Record ID: {property.propertyId || 'N/A'}</span>
+                </div>
               </div>
-              <div className={`p-3 rounded-xl ${card.color}`}>
-                <Icon className="w-6 h-6" />
+
+              <div className="text-right">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider block">Occupancy Rate</span>
+                <span className="text-base font-bold text-gray-800">
+                  {property.totalUnits > 0
+                    ? `${((property.occupiedUnits / property.totalUnits) * 100).toFixed(0)}%`
+                    : 'No record'}
+                </span>
               </div>
             </div>
-          );
-        })}
-      </div>
+
+            {/* UNIT & OCCUPANCY METRIC CARDS */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg flex items-center gap-3">
+                <div className="p-2 bg-slate-200 text-slate-700 rounded-md">
+                  <Home size={18} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-500">Total Units</p>
+                  <p className="text-lg font-bold text-slate-800">
+                    {property.totalUnits > 0 ? property.totalUnits : 'No record'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-lg flex items-center gap-3">
+                <div className="p-2 bg-emerald-200 text-emerald-800 rounded-md">
+                  <UserCheck size={18} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-emerald-700">Occupied Units</p>
+                  <p className="text-lg font-bold text-emerald-900">{property.occupiedUnits}</p>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex items-center gap-3">
+                <div className="p-2 bg-amber-200 text-amber-800 rounded-md">
+                  <UserX size={18} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-amber-700">Vacant Units</p>
+                  <p className="text-lg font-bold text-amber-900">{property.vacantUnits}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* INVOICE FINANCIAL CARDS */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="border border-green-200 bg-green-50/50 p-4 rounded-lg">
+                <div className="flex items-center justify-between text-green-700 mb-1">
+                  <span className="text-xs font-semibold">Paid Invoices</span>
+                  <CheckCircle2 size={16} />
+                </div>
+                <p className="text-xl font-bold text-green-900">{financials.paidInvoices}</p>
+                <p className="text-xs text-green-700 mt-1 font-medium">
+                  ${financials.totalPaidAmount?.toLocaleString() ?? 0}
+                </p>
+              </div>
+
+              <div className="border border-yellow-200 bg-yellow-50/50 p-4 rounded-lg">
+                <div className="flex items-center justify-between text-yellow-700 mb-1">
+                  <span className="text-xs font-semibold">Unpaid Invoices</span>
+                  <Clock size={16} />
+                </div>
+                <p className="text-xl font-bold text-yellow-900">{financials.unpaidInvoices}</p>
+                <p className="text-xs text-yellow-700 mt-1 font-medium">
+                  ${financials.totalUnpaidAmount?.toLocaleString() ?? 0}
+                </p>
+              </div>
+
+              <div className="border border-red-200 bg-red-50/50 p-4 rounded-lg">
+                <div className="flex items-center justify-between text-red-700 mb-1">
+                  <span className="text-xs font-semibold">Overdue Invoices</span>
+                  <AlertTriangle size={16} />
+                </div>
+                <p className="text-xl font-bold text-red-900">{financials.overdueInvoices}</p>
+                <p className="text-xs text-red-700 mt-1 font-medium">
+                  ${financials.totalOverdueAmount?.toLocaleString() ?? 0}
+                </p>
+              </div>
+
+              <div className="border border-blue-200 bg-blue-50/50 p-4 rounded-lg">
+                <div className="flex items-center justify-between text-blue-700 mb-1">
+                  <span className="text-xs font-semibold">Partial Payments</span>
+                  <Clock size={16} />
+                </div>
+                <p className="text-xl font-bold text-blue-900">{financials.partialPayments}</p>
+                <p className="text-xs text-blue-700 mt-1 font-medium">
+                  ${financials.totalPartialAmount?.toLocaleString() ?? 0}
+                </p>
+              </div>
+            </div>
+
+            {/* GRAPHICAL REPRESENTATION OF FINANCIALS */}
+            <div className="bg-gray-50 border border-gray-200 p-5 rounded-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <PieChartIcon size={18} className="text-gray-600" />
+                  <h4 className="text-sm font-bold text-gray-800">Financial Breakdown Visual</h4>
+                </div>
+                <span className="text-xs text-gray-500 font-medium">
+                  Total Invoices: {totalInvoicesCount > 0 ? totalInvoicesCount : 'No record'}
+                </span>
+              </div>
+
+              {totalInvoicesCount === 0 ? (
+                <div className="py-6 text-center text-xs text-gray-400 border border-dashed border-gray-200 rounded-md">
+                  No invoice records registered for this property.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* PROGRESS DISTRIBUTION BAR */}
+                  <div className="h-4 w-full bg-gray-200 rounded-full overflow-hidden flex">
+                    <div
+                      style={{ width: `${paidPct}%` }}
+                      className="bg-emerald-500 h-full transition-all duration-500"
+                      title={`Paid: ${paidPct}%`}
+                    />
+                    <div
+                      style={{ width: `${unpaidPct}%` }}
+                      className="bg-amber-400 h-full transition-all duration-500"
+                      title={`Unpaid: ${unpaidPct}%`}
+                    />
+                    <div
+                      style={{ width: `${overduePct}%` }}
+                      className="bg-red-500 h-full transition-all duration-500"
+                      title={`Overdue: ${overduePct}%`}
+                    />
+                    <div
+                      style={{ width: `${partialPct}%` }}
+                      className="bg-blue-500 h-full transition-all duration-500"
+                      title={`Partial: ${partialPct}%`}
+                    />
+                  </div>
+
+                  {/* CHART LEGEND & STATS */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                      <span className="text-gray-600">Paid:</span>
+                      <span className="font-bold text-gray-800">{paidPct}%</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-amber-400" />
+                      <span className="text-gray-600">Unpaid:</span>
+                      <span className="font-bold text-gray-800">{unpaidPct}%</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500" />
+                      <span className="text-gray-600">Overdue:</span>
+                      <span className="font-bold text-gray-800">{overduePct}%</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-500" />
+                      <span className="text-gray-600">Partial:</span>
+                      <span className="font-bold text-gray-800">{partialPct}%</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 };

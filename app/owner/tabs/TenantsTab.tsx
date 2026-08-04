@@ -1,123 +1,111 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabaseClient';
-import { OwnerTenantRecord } from '../types';
-import { Loader2, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Loader2, AlertCircle, Users } from 'lucide-react';
+import { TenantPaymentHistory } from '../types';
 
 export const TenantsTab: React.FC = () => {
-  const supabase = createClient();
-  const [tenants, setTenants] = useState<OwnerTenantRecord[]>([]);
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [paymentHistory, setPaymentHistory] = useState<TenantPaymentHistory[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchTenants() {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Fetch properties owned by this user first
-        const { data: userProps } = await supabase
-          .from('properties')
-          .select('id, name')
-          .eq('owner_id', user.id);
-
-        const propertyIds = userProps?.map((p) => p.id) || [];
-
-        if (propertyIds.length > 0) {
-          const { data } = await supabase
-            .from('tenants')
-            .select('id, full_name, unit_number, phone, rent_status, properties(name)')
-            .in('property_id', propertyIds);
-
-          const formatted = (data || []).map((t: any) => ({
-            id: t.id,
-            full_name: t.full_name,
-            unit_number: t.unit_number,
-            property_name: t.properties?.name || 'Unassigned',
-            phone: t.phone,
-            rent_status: t.rent_status || 'pending',
-          }));
-          setTenants(formatted);
+    const fetchPaymentHistory = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await fetch('/property-manager/api/tenant-payments', { cache: 'no-store' });
+        
+        if (!res.ok) {
+          throw new Error('Failed to load tenant payment records from database.');
         }
+
+        const data = await res.json();
+        setPaymentHistory(data.payments || []);
+      } catch (err: unknown) {
+        console.error('Failed to load tenant payment history from database:', err);
+        const message = err instanceof Error ? err.message : 'Unable to retrieve tenant payment records.';
+        setError(message);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }
-    fetchTenants();
+    };
+
+    fetchPaymentHistory();
   }, []);
 
-  const filteredTenants = tenants.filter(
-    (t) =>
-      t.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      t.property_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const getStatusBadge = (status: TenantPaymentHistory['status']) => {
+    switch (status) {
+      case 'paid':
+        return <span className="bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-medium">Paid</span>;
+      case 'unpaid':
+        return <span className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-1 rounded-full font-medium">Unpaid</span>;
+      case 'overdue':
+        return <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium">Overdue</span>;
+      case 'partial':
+        return <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-medium">Partial</span>;
+      default:
+        return <span className="bg-gray-100 text-gray-800 text-xs px-2.5 py-1 rounded-full font-medium">{status}</span>;
+    }
+  };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="p-12 bg-white rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 gap-2 shadow-sm">
+        <Loader2 className="animate-spin text-blue-600" size={24} />
+        <span>Loading tenant payment records...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center gap-2">
+        <AlertCircle size={18} />
+        <span>{error}</span>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden space-y-4 p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-800">Tenants Directory</h2>
-        <div className="relative w-64">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-          <input
-            type="text"
-            placeholder="Search tenant or property..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
-        </div>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="p-6 border-b border-gray-200 flex items-center gap-2">
+        <Users size={20} className="text-blue-600" />
+        <h2 className="text-xl font-bold text-gray-800">Tenants & Payment History</h2>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50 text-gray-500 text-xs uppercase font-medium border-b border-gray-200">
-              <th className="px-6 py-3">Tenant Name</th>
-              <th className="px-6 py-3">Property & Unit</th>
-              <th className="px-6 py-3">Phone</th>
-              <th className="px-6 py-3">Payment Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 text-sm">
-            {filteredTenants.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
-                  No tenants found.
-                </td>
+      {paymentHistory.length === 0 ? (
+        <div className="p-12 text-center text-gray-500 text-sm">
+          No tenant payment records found in the database.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">
+                <th className="p-4">Tenant Name</th>
+                <th className="p-4">Property</th>
+                <th className="p-4">Unit</th>
+                <th className="p-4">Amount</th>
+                <th className="p-4">Status</th>
+                <th className="p-4">Date</th>
               </tr>
-            ) : (
-              filteredTenants.map((tenant) => (
-                <tr key={tenant.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{tenant.full_name}</td>
-                  <td className="px-6 py-4 text-gray-600">
-                    {tenant.property_name} - Door {tenant.unit_number}
-                  </td>
-                  <td className="px-6 py-4 text-gray-500">{tenant.phone}</td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full ${
-                        tenant.rent_status === 'paid'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {tenant.rent_status}
-                    </span>
-                  </td>
+            </thead>
+            <tbody className="divide-y divide-gray-200 text-sm">
+              {paymentHistory.map((item) => (
+                <tr key={item.id}>
+                  <td className="p-4 font-medium text-gray-900">{item.tenant_name}</td>
+                  <td className="p-4 text-gray-600">{item.property_name}</td>
+                  <td className="p-4 text-gray-600">{item.unit_number}</td>
+                  <td className="p-4 font-medium text-gray-900">${item.amount.toFixed(2)}</td>
+                  <td className="p-4">{getStatusBadge(item.status)}</td>
+                  <td className="p-4 text-gray-500">{item.date}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
