@@ -109,7 +109,7 @@ export const DashboardTab: React.FC = () => {
   if (loading) {
     return (
       <div className="p-12 text-center text-gray-500 font-medium animate-pulse">
-        Loading tenant dashboard & profile...
+        Loading tenant dashboard...
       </div>
     );
   }
@@ -119,14 +119,14 @@ export const DashboardTab: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* REAL USER & PROPERTY HEADER CARD */}
+      {/* HERO SECTION WITH REAL DATABASE DATA ONLY */}
       <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
           <div>
             <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">Tenant Portal</span>
             <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2 mt-0.5">
               <User className="text-gray-600" size={22} />
-              {profile?.name || 'Logged-in Tenant'}
+              {profile?.name || 'Tenant Dashboard'}
             </h2>
           </div>
           <button
@@ -139,14 +139,16 @@ export const DashboardTab: React.FC = () => {
           </button>
         </div>
 
-        {/* PROPERTY, UNIT, AND CARETAKER INFO BAR */}
+        {/* PROPERTY, UNIT, AND CARETAKER REAL DATA */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-1 text-sm">
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
             <Home className="text-blue-600 shrink-0" size={20} />
             <div>
               <div className="text-xs text-gray-500 font-medium">Property &amp; Unit</div>
               <div className="font-semibold text-gray-800">
-                {profile?.property_name ? `${profile.property_name} — Unit ${profile.unit_number}` : 'No assigned unit'}
+                {profile?.property_name && profile?.unit_number
+                  ? `${profile.property_name} — Unit ${profile.unit_number}`
+                  : profile?.property_name || (profile?.unit_number ? `Unit ${profile.unit_number}` : 'No unit assigned')}
               </div>
             </div>
           </div>
@@ -156,8 +158,14 @@ export const DashboardTab: React.FC = () => {
             <div>
               <div className="text-xs text-gray-500 font-medium">Assigned Caretaker</div>
               <div className="font-semibold text-gray-800">
-                {profile?.caretaker_name || 'Unassigned'}
-                {profile?.caretaker_phone ? ` (${profile.caretaker_phone})` : ''}
+                {profile?.caretaker_name ? (
+                  <>
+                    {profile.caretaker_name}
+                    {profile.caretaker_phone ? ` (${profile.caretaker_phone})` : ''}
+                  </>
+                ) : (
+                  'Not assigned'
+                )}
               </div>
             </div>
           </div>

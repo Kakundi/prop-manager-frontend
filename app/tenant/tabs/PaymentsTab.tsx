@@ -85,20 +85,20 @@ export const PaymentsTab: React.FC = () => {
   if (loading) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center text-gray-500 font-medium animate-pulse">
-        Loading payment transactions & tenant info...
+        Loading payment records...
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* USER & PROPERTY HEADER */}
+      {/* HERO SECTION WITH REAL DATABASE DATA ONLY */}
       <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
           <div>
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <User size={20} className="text-gray-600" />
-              {profile?.name || 'Logged-in Tenant'} — Payment Ledger
+              {profile?.name ? `${profile.name} — Payment Ledger` : 'Payment Ledger'}
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">Historical log of all submitted and verified transactions</p>
           </div>
@@ -118,7 +118,9 @@ export const PaymentsTab: React.FC = () => {
             <div>
               <div className="text-xs text-gray-500 font-medium">Property &amp; Unit</div>
               <div className="font-semibold text-gray-800">
-                {profile?.property_name ? `${profile.property_name} (Unit ${profile.unit_number})` : 'N/A'}
+                {profile?.property_name && profile?.unit_number
+                  ? `${profile.property_name} (Unit ${profile.unit_number})`
+                  : profile?.property_name || (profile?.unit_number ? `Unit ${profile.unit_number}` : 'Not assigned')}
               </div>
             </div>
           </div>
@@ -127,7 +129,7 @@ export const PaymentsTab: React.FC = () => {
             <UserCheck className="text-emerald-600 shrink-0" size={18} />
             <div>
               <div className="text-xs text-gray-500 font-medium">Assigned Caretaker</div>
-              <div className="font-semibold text-gray-800">{profile?.caretaker_name || 'N/A'}</div>
+              <div className="font-semibold text-gray-800">{profile?.caretaker_name || 'Not assigned'}</div>
             </div>
           </div>
         </div>
