@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export const AddPropertyTab: React.FC = () => {
   const [propertyName, setPropertyName] = useState('');
@@ -10,30 +11,67 @@ export const AddPropertyTab: React.FC = () => {
   const [parkingFee, setParkingFee] = useState<number | ''>('');
   const [waterFeePerMeter, setWaterFeePerMeter] = useState<number | ''>('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('New Property Data:', {
-      propertyName,
-      unitsCount,
-      rentPerUnit,
-      garbageFee,
-      parkingFee,
-      waterFeePerMeter,
-    });
-    alert('Property added successfully!');
-    // Reset Form
-    setPropertyName('');
-    setUnitsCount('');
-    setRentPerUnit('');
-    setGarbageFee('');
-    setParkingFee('');
-    setWaterFeePerMeter('');
+    setLoading(true);
+    setFeedback(null);
+
+    try {
+      const res = await fetch('/property-manager/api/properties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: propertyName,
+          units_count: unitsCount,
+          rent_per_unit: rentPerUnit,
+          garbage_fee: garbageFee || 0,
+          parking_fee: parkingFee || 0,
+          water_fee_per_meter: waterFeePerMeter || 0,
+        }),
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to add property record to database.');
+
+      setFeedback({
+        type: 'success',
+        msg: `Property "${propertyName}" successfully created in database!`,
+      });
+
+      // Reset Form
+      setPropertyName('');
+      setUnitsCount('');
+      setRentPerUnit('');
+      setGarbageFee('');
+      setParkingFee('');
+      setWaterFeePerMeter('');
+    } catch (err: any) {
+      setFeedback({ type: 'error', msg: err.message || 'Error creating property.' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="max-w-3xl bg-white p-8 rounded-xl shadow-sm border border-gray-200">
       <h2 className="text-xl font-bold text-gray-800 mb-6">ADD Properties</h2>
-      
+
+      {feedback && (
+        <div
+          className={`p-4 rounded-lg text-sm mb-6 flex items-center gap-2 ${
+            feedback.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-800'
+              : 'bg-red-50 border border-red-200 text-red-800'
+          }`}
+        >
+          {feedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+          {feedback.msg}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1">
@@ -56,8 +94,9 @@ export const AddPropertyTab: React.FC = () => {
           <input
             type="number"
             required
+            min="1"
             value={unitsCount}
-            onChange={(e) => setUnitsCount(Number(e.target.value))}
+            onChange={(e) => setUnitsCount(e.target.value === '' ? '' : Number(e.target.value))}
             placeholder="Total number of units"
             className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
           />
@@ -71,8 +110,9 @@ export const AddPropertyTab: React.FC = () => {
             <input
               type="number"
               required
+              min="0"
               value={rentPerUnit}
-              onChange={(e) => setRentPerUnit(Number(e.target.value))}
+              onChange={(e) => setRentPerUnit(e.target.value === '' ? '' : Number(e.target.value))}
               placeholder="e.g. 800"
               className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             />
@@ -84,8 +124,9 @@ export const AddPropertyTab: React.FC = () => {
             </label>
             <input
               type="number"
+              min="0"
               value={garbageFee}
-              onChange={(e) => setGarbageFee(Number(e.target.value))}
+              onChange={(e) => setGarbageFee(e.target.value === '' ? '' : Number(e.target.value))}
               placeholder="e.g. 30"
               className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             />
@@ -97,8 +138,9 @@ export const AddPropertyTab: React.FC = () => {
             </label>
             <input
               type="number"
+              min="0"
               value={parkingFee}
-              onChange={(e) => setParkingFee(Number(e.target.value))}
+              onChange={(e) => setParkingFee(e.target.value === '' ? '' : Number(e.target.value))}
               placeholder="e.g. 50"
               className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             />
@@ -110,8 +152,9 @@ export const AddPropertyTab: React.FC = () => {
             </label>
             <input
               type="number"
+              min="0"
               value={waterFeePerMeter}
-              onChange={(e) => setWaterFeePerMeter(Number(e.target.value))}
+              onChange={(e) => setWaterFeePerMeter(e.target.value === '' ? '' : Number(e.target.value))}
               placeholder="e.g. 5"
               className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             />
@@ -120,9 +163,17 @@ export const AddPropertyTab: React.FC = () => {
 
         <button
           type="submit"
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition"
+          disabled={loading}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          Save Property
+          {loading ? (
+            <>
+              <Loader2 className="animate-spin" size={18} />
+              Saving to Database...
+            </>
+          ) : (
+            'Save Property'
+          )}
         </button>
       </form>
     </div>
