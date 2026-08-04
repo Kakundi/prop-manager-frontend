@@ -6,15 +6,25 @@ import {
   Gauge, 
   UserPlus, 
   History, 
-  Wrench 
+  Wrench,
+  DollarSign
 } from 'lucide-react';
+
 import { DashboardTab } from './tabs/DashboardTab';
 import { MeterReadingTab } from './tabs/MeterReadingTab';
 import { AddTenantTab } from './tabs/AddTenantTab';
 import { PaymentsTab } from './tabs/PaymentsTab';
+import { UnassignedPaymentsTab } from './tabs/UnassignedPaymentsTab';
 
-// Export the type expected by Sidebar.tsx
-export type CaretakerTab = 'dashboard' | 'meter' | 'add-tenant' | 'payments' | 'requests' | 'settings';
+// Exported type for external components (e.g., Sidebar.tsx)
+export type CaretakerTab = 
+  | 'dashboard' 
+  | 'meter' 
+  | 'add-tenant' 
+  | 'payments' 
+  | 'unassigned-payments' 
+  | 'requests' 
+  | 'settings';
 
 interface CaretakerProfile {
   full_name: string;
@@ -50,6 +60,7 @@ export default function CaretakerPortalPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
+      {/* Sidebar Navigation */}
       <aside className="w-64 bg-slate-900 text-white p-6 flex flex-col justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold text-white mb-1 tracking-wide flex items-center gap-2">
@@ -106,6 +117,18 @@ export default function CaretakerPortalPage() {
               <History size={18} />
               Payment History
             </button>
+
+            <button
+              onClick={() => setActiveTab('unassigned-payments')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition ${
+                activeTab === 'unassigned-payments'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <DollarSign size={18} />
+              Unassigned Payments
+            </button>
           </nav>
         </div>
 
@@ -114,7 +137,9 @@ export default function CaretakerPortalPage() {
         </div>
       </aside>
 
+      {/* Main Content Area */}
       <main className="flex-1 p-8 overflow-y-auto">
+        {/* Profile Header */}
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-8">
           <h2 className="text-2xl font-extrabold text-emerald-700">
             {loading ? (
@@ -124,14 +149,32 @@ export default function CaretakerPortalPage() {
             )}
           </h2>
           <p className="text-sm font-medium text-gray-600 mt-1">
-            Assigned Property: <span className="font-semibold text-gray-800">{profile?.assigned_property_name || 'No assigned property record found'}</span>
+            Assigned Property:{' '}
+            <span className="font-semibold text-gray-800">
+              {profile?.assigned_property_name || 'No assigned property record found'}
+            </span>
           </p>
         </div>
 
-        {activeTab === 'dashboard' && <DashboardTab propertyId={profile?.assigned_property_id} propertyName={profile?.assigned_property_name} />}
-        {activeTab === 'meter' && <MeterReadingTab propertyId={profile?.assigned_property_id} />}
-        {activeTab === 'add-tenant' && <AddTenantTab propertyId={profile?.assigned_property_id} />}
-        {activeTab === 'payments' && <PaymentsTab propertyId={profile?.assigned_property_id} />}
+        {/* Tab Views */}
+        {activeTab === 'dashboard' && (
+          <DashboardTab 
+            propertyId={profile?.assigned_property_id} 
+            propertyName={profile?.assigned_property_name} 
+          />
+        )}
+        {activeTab === 'meter' && (
+          <MeterReadingTab propertyId={profile?.assigned_property_id} />
+        )}
+        {activeTab === 'add-tenant' && (
+          <AddTenantTab propertyId={profile?.assigned_property_id} />
+        )}
+        {activeTab === 'payments' && (
+          <PaymentsTab propertyId={profile?.assigned_property_id} />
+        )}
+        {activeTab === 'unassigned-payments' && (
+          <UnassignedPaymentsTab propertyId={profile?.assigned_property_id} />
+        )}
       </main>
     </div>
   );
