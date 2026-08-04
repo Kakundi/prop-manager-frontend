@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
   Gauge, 
   UserPlus, 
   History, 
   Wrench,
-  DollarSign
+  DollarSign,
+  LogOut
 } from 'lucide-react';
 
 import { DashboardTab } from './tabs/DashboardTab';
@@ -33,6 +35,7 @@ interface CaretakerProfile {
 }
 
 export default function CaretakerPortalPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<CaretakerTab>('dashboard');
   const [profile, setProfile] = useState<CaretakerProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -57,6 +60,18 @@ export default function CaretakerPortalPage() {
 
     fetchProfile();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      // Call auth logout endpoint if applicable
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      // Redirect to login page
+      router.push('/login');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
@@ -132,8 +147,19 @@ export default function CaretakerPortalPage() {
           </nav>
         </div>
 
-        <div className="text-xs text-slate-500">
-          Caretaker Mode v1.0.0
+        {/* Footer Area: Logout & Version */}
+        <div className="pt-6 border-t border-slate-800 space-y-4">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition"
+          >
+            <LogOut size={18} />
+            Log Out
+          </button>
+
+          <div className="text-xs text-slate-500 px-4">
+            Caretaker Mode v1.0.0
+          </div>
         </div>
       </aside>
 
