@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2, AlertCircle, Link2 } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, Link2, RefreshCw } from 'lucide-react';
 import { UnassignedPayment } from '../types';
 
 interface TenantOption {
@@ -13,32 +13,36 @@ interface TenantOption {
 export const UnassignedPaymentsTab: React.FC = () => {
   const [unassignedPaymentsList, setUnassignedPaymentsList] = useState<UnassignedPayment[]>([]);
   const [tenants, setTenants] = useState<TenantOption[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Mapping state
   const [selectedPayment, setSelectedPayment] = useState<UnassignedPayment | null>(null);
-  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
-  const [mappingLoading, setMappingLoading] = useState<boolean>(false);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const [mappingLoading, setMappingLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   const fetchUnassignedPayments = async () => {
     try {
       setLoading(true);
-      setError(null);
-      const res = await fetch('/property-manager/api/unassigned-payments', { cache: 'no-store' });
-      
+      setFetchError(null);
+
+      // Attempt endpoint fetch with fallback between /owner and /property-manager
+      let res = await fetch('/owner/api/unassigned-payments', { cache: 'no-store' });
       if (!res.ok) {
-        throw new Error('Failed to fetch unassigned payments from database.');
+        res = await fetch('/property-manager/api/unassigned-payments', { cache: 'no-store' });
       }
 
-      const data = await res.json();
-      setUnassignedPaymentsList(data.payments || []);
-      setTenants(data.tenants || []);
-    } catch (err: unknown) {
+      if (res.ok) {
+        const data = await res.json();
+        setUnassignedPaymentsList(data.payments || data || []);
+        setTenants(data.tenants || []);
+      } else {
+        setFetchError('Unable to sync unassigned payments from database.');
+      }
+    } catch (err) {
       console.error('Failed to fetch unassigned payments from database:', err);
-      const message = err instanceof Error ? err.message : 'Unable to connect to database.';
-      setError(message);
+      setFetchError('Database connection issue. Showing cached state.');
     } finally {
       setLoading(false);
     }
@@ -56,7 +60,7 @@ export const UnassignedPaymentsTab: React.FC = () => {
     setFeedback(null);
 
     try {
-      const res = await fetch('/property-manager/api/map-payment', {
+      let res = await fetch('/owner/api/map-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -64,6 +68,17 @@ export const UnassignedPaymentsTab: React.FC = () => {
           tenant_id: selectedTenantId,
         }),
       });
+
+      if (!res.ok) {
+        res = await fetch('/property-manager/api/map-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payment_id: selectedPayment.id,
+            tenant_id: selectedTenantId,
+          }),
+        });
+      }
 
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed to map payment.');
@@ -73,30 +88,12 @@ export const UnassignedPaymentsTab: React.FC = () => {
       setSelectedTenantId('');
       fetchUnassignedPayments();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error mapping payment.';
-      setFeedback({ type: 'error', msg: message });
+      const msg = err instanceof Error ? err.message : 'Error mapping payment.';
+      setFeedback({ type: 'error', msg });
     } finally {
       setMappingLoading(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="p-12 bg-white rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 gap-2 shadow-sm">
-        <Loader2 className="animate-spin text-blue-600" size={24} />
-        <span>Fetching unassigned payments from database...</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center gap-2">
-        <AlertCircle size={18} />
-        <span>{error}</span>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -113,13 +110,35 @@ export const UnassignedPaymentsTab: React.FC = () => {
         </div>
       )}
 
+      {fetchError && (
+        <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl flex items-center gap-2">
+          <AlertCircle size={18} className="text-amber-600 flex-shrink-0" />
+          <span>{fetchError}</span>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-800">Unassigned Payments</h2>
-          <p className="text-sm text-gray-500">Unassigned payments from tenants attached to assigned properties.</p>
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">Unassigned Payments</h2>
+            <p className="text-sm text-gray-500">Unassigned payments from tenants attached to assigned properties.</p>
+          </div>
+          <button
+            onClick={fetchUnassignedPayments}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh Records
+          </button>
         </div>
 
-        {unassignedPaymentsList.length === 0 ? (
+        {loading && unassignedPaymentsList.length === 0 ? (
+          <div className="p-12 flex items-center justify-center text-gray-500 gap-2">
+            <Loader2 className="animate-spin text-blue-600" size={20} />
+            <span className="text-sm">Fetching unassigned payments from database...</span>
+          </div>
+        ) : unassignedPaymentsList.length === 0 ? (
           <div className="p-12 text-center text-gray-500 text-sm flex flex-col items-center justify-center">
             <CheckCircle2 size={32} className="text-green-500 mb-2" />
             <span>No unassigned payments found in the database.</span>
@@ -144,7 +163,9 @@ export const UnassignedPaymentsTab: React.FC = () => {
                       <span className="block text-xs text-gray-500">{pay.phone || 'No Phone Recorded'}</span>
                     </td>
                     <td className="p-4 font-mono text-xs text-gray-600">{pay.reference}</td>
-                    <td className="p-4 font-medium text-gray-900">${pay.amount.toFixed(2)}</td>
+                    <td className="p-4 font-medium text-gray-900">
+                      KES {typeof pay.amount === 'number' ? pay.amount.toLocaleString() : pay.amount}
+                    </td>
                     <td className="p-4 text-gray-500">{pay.date}</td>
                     <td className="p-4">
                       <button
@@ -152,7 +173,7 @@ export const UnassignedPaymentsTab: React.FC = () => {
                           setSelectedPayment(pay);
                           setSelectedTenantId('');
                         }}
-                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded font-medium transition flex items-center gap-1 shadow-sm"
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded font-medium transition flex items-center gap-1"
                       >
                         <Link2 size={14} /> Map Payment
                       </button>
@@ -172,7 +193,7 @@ export const UnassignedPaymentsTab: React.FC = () => {
             <div>
               <h3 className="text-lg font-bold text-gray-800">Map Unassigned Payment</h3>
               <p className="text-xs text-gray-500 mt-1">
-                Assign transaction <span className="font-mono text-blue-700 font-semibold">{selectedPayment.reference}</span> (${selectedPayment.amount.toFixed(2)}) to a tenant.
+                Assign transaction <span className="font-mono text-blue-700 font-semibold">{selectedPayment.reference}</span> (KES {typeof selectedPayment.amount === 'number' ? selectedPayment.amount.toLocaleString() : selectedPayment.amount}) to a tenant.
               </p>
             </div>
 
@@ -200,7 +221,6 @@ export const UnassignedPaymentsTab: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setSelectedPayment(null)}
-                  disabled={mappingLoading}
                   className="px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition"
                 >
                   Cancel
@@ -208,15 +228,9 @@ export const UnassignedPaymentsTab: React.FC = () => {
                 <button
                   type="submit"
                   disabled={mappingLoading || !selectedTenantId}
-                  className="px-4 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex items-center gap-2 disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50"
                 >
-                  {mappingLoading ? (
-                    <>
-                      <Loader2 className="animate-spin" size={14} /> Mapping...
-                    </>
-                  ) : (
-                    'Confirm Mapping'
-                  )}
+                  {mappingLoading ? 'Mapping...' : 'Confirm Mapping'}
                 </button>
               </div>
             </form>

@@ -34,6 +34,24 @@ export interface PropertyDashboardData {
   financials: PropertyFinancials;
 }
 
+const DEFAULT_PLACEHOLDER_PROPERTY: PropertyDashboardData = {
+  propertyId: 'sample-001',
+  propertyName: 'Sample Property (Placeholder)',
+  totalUnits: 0,
+  occupiedUnits: 0,
+  vacantUnits: 0,
+  financials: {
+    paidInvoices: 0,
+    unpaidInvoices: 0,
+    overdueInvoices: 0,
+    partialPayments: 0,
+    totalPaidAmount: 0,
+    totalUnpaidAmount: 0,
+    totalOverdueAmount: 0,
+    totalPartialAmount: 0,
+  },
+};
+
 export const DashboardTab: React.FC = () => {
   const [properties, setProperties] = useState<PropertyDashboardData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -44,21 +62,29 @@ export const DashboardTab: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      // Fallback endpoint handler to support /owner or /property-manager database endpoints
       let res = await fetch('/owner/api/properties-overview', { cache: 'no-store' });
       if (!res.ok) {
         res = await fetch('/property-manager/api/properties-overview', { cache: 'no-store' });
       }
 
       if (!res.ok) {
-        throw new Error('Unable to connect to property records database.');
+        throw new Error('Unable to connect to property records database. Showing placeholder structure.');
       }
 
       const data = await res.json();
-      setProperties(data.properties || data || []);
-    } catch (err: any) {
+      const loadedProps = data.properties || data || [];
+
+      if (Array.isArray(loadedProps) && loadedProps.length > 0) {
+        setProperties(loadedProps);
+      } else {
+        setProperties([DEFAULT_PLACEHOLDER_PROPERTY]);
+      }
+    } catch (err: unknown) {
       console.error('Error fetching dashboard metrics:', err);
-      setError(err.message || 'Failed to fetch dashboard data.');
+      const message = err instanceof Error ? err.message : 'Database connection error.';
+      setError(message);
+      // Fallback to placeholder data on connection error
+      setProperties([DEFAULT_PLACEHOLDER_PROPERTY]);
     } finally {
       setLoading(false);
     }
@@ -72,43 +98,15 @@ export const DashboardTab: React.FC = () => {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12 flex flex-col items-center justify-center text-gray-500 gap-3 shadow-sm">
         <Loader2 className="animate-spin text-blue-600" size={28} />
-        <span className="text-sm font-medium">Loading live property metrics from database...</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-white rounded-xl border border-gray-200 p-8 text-center space-y-4 shadow-sm">
-        <div className="inline-flex p-3 bg-red-50 text-red-600 rounded-full">
-          <AlertTriangle size={24} />
-        </div>
-        <p className="text-sm text-red-600 font-medium">{error}</p>
-        <button
-          onClick={fetchDashboardData}
-          className="inline-flex items-center gap-2 text-xs font-semibold px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-        >
-          <RefreshCw size={14} /> Retry Database Query
-        </button>
-      </div>
-    );
-  }
-
-  if (properties.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center space-y-3">
-        <Building2 size={36} className="mx-auto text-gray-400" />
-        <h3 className="text-base font-bold text-gray-700">No Record Found</h3>
-        <p className="text-xs text-gray-500 max-w-sm mx-auto">
-          No property records or unit analytics were found in the database. Add properties in the Add Property tab to view dashboard analytics.
-        </p>
+        <span className="text-sm font-medium">Loading live property metrics...</span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-10">
-      <div className="flex items-center justify-between bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+    <div className="space-y-8">
+      {/* HEADER SECTION */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white p-6 rounded-xl border border-gray-200 shadow-sm gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Owner Dashboard Overview</h2>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -117,29 +115,44 @@ export const DashboardTab: React.FC = () => {
         </div>
         <button
           onClick={fetchDashboardData}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition self-start sm:self-auto"
         >
           <RefreshCw size={14} /> Refresh Records
         </button>
       </div>
 
+      {/* DATABASE DISCONNECT ALERT BANNER */}
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between text-amber-800 text-sm shadow-sm">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={18} className="text-amber-600 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={fetchDashboardData}
+            className="inline-flex items-center gap-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition"
+          >
+            <RefreshCw size={12} /> Retry Connection
+          </button>
+        </div>
+      )}
+
       {/* RENDER PER-PROPERTY DASHBOARD SECTION */}
       {properties.map((property) => {
-        const { financials } = property;
+        const financials = property.financials || DEFAULT_PLACEHOLDER_PROPERTY.financials;
         const totalInvoicesCount =
-          financials.paidInvoices +
-          financials.unpaidInvoices +
-          financials.overdueInvoices +
-          financials.partialPayments;
+          (financials.paidInvoices || 0) +
+          (financials.unpaidInvoices || 0) +
+          (financials.overdueInvoices || 0) +
+          (financials.partialPayments || 0);
 
-        // Financial distribution percentage calculations for custom CSS bar charts
         const getPct = (val: number) =>
           totalInvoicesCount > 0 ? ((val / totalInvoicesCount) * 100).toFixed(1) : '0';
 
-        const paidPct = Number(getPct(financials.paidInvoices));
-        const unpaidPct = Number(getPct(financials.unpaidInvoices));
-        const overduePct = Number(getPct(financials.overdueInvoices));
-        const partialPct = Number(getPct(financials.partialPayments));
+        const paidPct = Number(getPct(financials.paidInvoices || 0));
+        const unpaidPct = Number(getPct(financials.unpaidInvoices || 0));
+        const overduePct = Number(getPct(financials.overdueInvoices || 0));
+        const partialPct = Number(getPct(financials.partialPayments || 0));
 
         return (
           <div
@@ -163,7 +176,7 @@ export const DashboardTab: React.FC = () => {
                 <span className="text-base font-bold text-gray-800">
                   {property.totalUnits > 0
                     ? `${((property.occupiedUnits / property.totalUnits) * 100).toFixed(0)}%`
-                    : 'No record'}
+                    : '0%'}
                 </span>
               </div>
             </div>
@@ -176,9 +189,7 @@ export const DashboardTab: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-slate-500">Total Units</p>
-                  <p className="text-lg font-bold text-slate-800">
-                    {property.totalUnits > 0 ? property.totalUnits : 'No record'}
-                  </p>
+                  <p className="text-lg font-bold text-slate-800">{property.totalUnits ?? 0}</p>
                 </div>
               </div>
 
@@ -188,7 +199,7 @@ export const DashboardTab: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-emerald-700">Occupied Units</p>
-                  <p className="text-lg font-bold text-emerald-900">{property.occupiedUnits}</p>
+                  <p className="text-lg font-bold text-emerald-900">{property.occupiedUnits ?? 0}</p>
                 </div>
               </div>
 
@@ -198,7 +209,7 @@ export const DashboardTab: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-amber-700">Vacant Units</p>
-                  <p className="text-lg font-bold text-amber-900">{property.vacantUnits}</p>
+                  <p className="text-lg font-bold text-amber-900">{property.vacantUnits ?? 0}</p>
                 </div>
               </div>
             </div>
@@ -210,9 +221,9 @@ export const DashboardTab: React.FC = () => {
                   <span className="text-xs font-semibold">Paid Invoices</span>
                   <CheckCircle2 size={16} />
                 </div>
-                <p className="text-xl font-bold text-green-900">{financials.paidInvoices}</p>
+                <p className="text-xl font-bold text-green-900">{financials.paidInvoices ?? 0}</p>
                 <p className="text-xs text-green-700 mt-1 font-medium">
-                  ${financials.totalPaidAmount?.toLocaleString() ?? 0}
+                  ${(financials.totalPaidAmount ?? 0).toLocaleString()}
                 </p>
               </div>
 
@@ -221,9 +232,9 @@ export const DashboardTab: React.FC = () => {
                   <span className="text-xs font-semibold">Unpaid Invoices</span>
                   <Clock size={16} />
                 </div>
-                <p className="text-xl font-bold text-yellow-900">{financials.unpaidInvoices}</p>
+                <p className="text-xl font-bold text-yellow-900">{financials.unpaidInvoices ?? 0}</p>
                 <p className="text-xs text-yellow-700 mt-1 font-medium">
-                  ${financials.totalUnpaidAmount?.toLocaleString() ?? 0}
+                  ${(financials.totalUnpaidAmount ?? 0).toLocaleString()}
                 </p>
               </div>
 
@@ -232,9 +243,9 @@ export const DashboardTab: React.FC = () => {
                   <span className="text-xs font-semibold">Overdue Invoices</span>
                   <AlertTriangle size={16} />
                 </div>
-                <p className="text-xl font-bold text-red-900">{financials.overdueInvoices}</p>
+                <p className="text-xl font-bold text-red-900">{financials.overdueInvoices ?? 0}</p>
                 <p className="text-xs text-red-700 mt-1 font-medium">
-                  ${financials.totalOverdueAmount?.toLocaleString() ?? 0}
+                  ${(financials.totalOverdueAmount ?? 0).toLocaleString()}
                 </p>
               </div>
 
@@ -243,9 +254,9 @@ export const DashboardTab: React.FC = () => {
                   <span className="text-xs font-semibold">Partial Payments</span>
                   <Clock size={16} />
                 </div>
-                <p className="text-xl font-bold text-blue-900">{financials.partialPayments}</p>
+                <p className="text-xl font-bold text-blue-900">{financials.partialPayments ?? 0}</p>
                 <p className="text-xs text-blue-700 mt-1 font-medium">
-                  ${financials.totalPartialAmount?.toLocaleString() ?? 0}
+                  ${(financials.totalPartialAmount ?? 0).toLocaleString()}
                 </p>
               </div>
             </div>
@@ -258,7 +269,7 @@ export const DashboardTab: React.FC = () => {
                   <h4 className="text-sm font-bold text-gray-800">Financial Breakdown Visual</h4>
                 </div>
                 <span className="text-xs text-gray-500 font-medium">
-                  Total Invoices: {totalInvoicesCount > 0 ? totalInvoicesCount : 'No record'}
+                  Total Invoices: {totalInvoicesCount}
                 </span>
               </div>
 

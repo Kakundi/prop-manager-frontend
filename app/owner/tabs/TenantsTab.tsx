@@ -1,36 +1,41 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Loader2, AlertCircle, Users } from 'lucide-react';
+import { Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { TenantPaymentHistory } from '../types';
 
 export const TenantsTab: React.FC = () => {
   const [paymentHistory, setPaymentHistory] = useState<TenantPaymentHistory[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const fetchPaymentHistory = async () => {
+    try {
+      setLoading(true);
+      setFetchError(null);
+
+      // Attempt endpoint fetch with fallback between /owner and /property-manager
+      let res = await fetch('/owner/api/tenant-payments', { cache: 'no-store' });
+      if (!res.ok) {
+        res = await fetch('/property-manager/api/tenant-payments', { cache: 'no-store' });
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        const records = data.payments || data || [];
+        setPaymentHistory(Array.isArray(records) ? records : []);
+      } else {
+        setFetchError('Unable to sync payment records from database.');
+      }
+    } catch (err) {
+      console.error('Failed to load tenant payment history from database:', err);
+      setFetchError('Database connection issue. Showing cached state.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchPaymentHistory = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const res = await fetch('/property-manager/api/tenant-payments', { cache: 'no-store' });
-        
-        if (!res.ok) {
-          throw new Error('Failed to load tenant payment records from database.');
-        }
-
-        const data = await res.json();
-        setPaymentHistory(data.payments || []);
-      } catch (err: unknown) {
-        console.error('Failed to load tenant payment history from database:', err);
-        const message = err instanceof Error ? err.message : 'Unable to retrieve tenant payment records.';
-        setError(message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchPaymentHistory();
   }, []);
 
@@ -49,32 +54,41 @@ export const TenantsTab: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="p-12 bg-white rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 gap-2 shadow-sm">
-        <Loader2 className="animate-spin text-blue-600" size={24} />
-        <span>Loading tenant payment records...</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-center gap-2">
-        <AlertCircle size={18} />
-        <span>{error}</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div className="p-6 border-b border-gray-200 flex items-center gap-2">
-        <Users size={20} className="text-blue-600" />
-        <h2 className="text-xl font-bold text-gray-800">Tenants & Payment History</h2>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden space-y-0">
+      {/* HEADER SECTION */}
+      <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Tenants & Payment History</h2>
+          <p className="text-sm text-gray-500">
+            Overview of recorded rent collections, pending balances, and tenant ledger activity.
+          </p>
+        </div>
+        <button
+          onClick={fetchPaymentHistory}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          Refresh Records
+        </button>
       </div>
 
-      {paymentHistory.length === 0 ? (
+      {/* ERROR / NOTICE ALERT */}
+      {fetchError && (
+        <div className="p-4 bg-amber-50 border-b border-amber-200 text-amber-800 text-sm flex items-center gap-2">
+          <AlertCircle size={18} className="text-amber-600 flex-shrink-0" />
+          <span>{fetchError}</span>
+        </div>
+      )}
+
+      {/* TABLE / EMPTY STATE */}
+      {loading && paymentHistory.length === 0 ? (
+        <div className="p-12 flex items-center justify-center text-gray-500 gap-2">
+          <Loader2 className="animate-spin text-blue-600" size={20} />
+          <span className="text-sm">Loading tenant payment records...</span>
+        </div>
+      ) : paymentHistory.length === 0 ? (
         <div className="p-12 text-center text-gray-500 text-sm">
           No tenant payment records found in the database.
         </div>
@@ -97,7 +111,9 @@ export const TenantsTab: React.FC = () => {
                   <td className="p-4 font-medium text-gray-900">{item.tenant_name}</td>
                   <td className="p-4 text-gray-600">{item.property_name}</td>
                   <td className="p-4 text-gray-600">{item.unit_number}</td>
-                  <td className="p-4 font-medium text-gray-900">${item.amount.toFixed(2)}</td>
+                  <td className="p-4 font-medium text-gray-900">
+                    KES {typeof item.amount === 'number' ? item.amount.toLocaleString() : item.amount}
+                  </td>
                   <td className="p-4">{getStatusBadge(item.status)}</td>
                   <td className="p-4 text-gray-500">{item.date}</td>
                 </tr>
