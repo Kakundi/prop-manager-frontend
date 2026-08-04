@@ -170,9 +170,6 @@ export default function PropertyManagerPage() {
                   )}
                 </span> 👋
               </h1>
-              <p className="text-slate-300 text-xs md:text-sm mt-1">
-                Manage your real estate portfolio, assign tenant credentials, resolve unassigned payments, and track platform subscription billing in real time.
-              </p>
             </div>
           </div>
         </header>
