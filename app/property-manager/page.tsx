@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Header } from './Header';
-import { Sidebar } from './Sidebar';
+import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { DashboardTab } from './tabs/DashboardTab';
 import { AddPropertyTab } from './tabs/AddPropertyTab';
 import { UserManagementTab } from './tabs/UserManagementTab';
@@ -16,6 +16,7 @@ export default function PropertyManagerPage() {
   const [fullName, setFullName] = useState<string>('');
   const [loadingUser, setLoadingUser] = useState<boolean>(true);
 
+  // Fetch full_name from database profile endpoint
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
@@ -25,7 +26,7 @@ export default function PropertyManagerPage() {
         if (res.ok) {
           const data = await res.json();
           
-          // Checks all standard shapes returned from the profiles table query
+          // Extracts full_name across common database response shapes
           const name = 
             data?.full_name || 
             data?.profile?.full_name || 
@@ -38,7 +39,7 @@ export default function PropertyManagerPage() {
           }
         }
       } catch (err) {
-        console.error('Error fetching profiles full_name:', err);
+        console.error('Error fetching database profile full_name:', err);
       } finally {
         setLoadingUser(false);
       }
