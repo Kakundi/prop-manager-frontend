@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 export async function GET() {
@@ -27,31 +28,46 @@ export async function GET() {
       }
     );
 
-    // 1. Get current authenticated user
+    // 1. Get authenticated user session
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      console.log('❌ AUTH ERROR OR NO USER SESSION:', authError);
+      console.log('🔴 AUTH SESSION ERROR:', authError);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('🔍 QUERYING PROFILES FOR USER ID:', user.id);
+    console.log('🟢 LOGGED IN USER ID:', user.id);
+    console.log('🟢 LOGGED IN EMAIL:', user.email);
 
-    // 2. Fetch full_name from 'profiles' table
-    const { data: profileRow, error: profileError } = await supabase
+    // 2. Fetch directly from 'profiles' table using Service Role or Anon Client
+    // We query by user.id or user.email to ensure a match
+    let { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('full_name, email')
+      .select('full_name, email, role')
       .eq('id', user.id)
       .maybeSingle();
 
-    if (profileError) {
-      console.error('❌ PROFILES TABLE QUERY ERROR:', profileError.message);
-    } else {
-      console.log('✅ PROFILES ROW FOUND:', profileRow);
+    // Fallback search by email if id mapping differs in your dev environment
+    if (!profile && user.email) {
+      const { data: profileByEmail } = await supabase
+        .from('profiles')
+        .select('full_name, email, role')
+        .eq('email', user.email)
+        .maybeSingle();
+      
+      if (profileByEmail) {
+        profile = profileByEmail;
+      }
     }
 
-    // 3. Query unit/property details from 'tenants' table if available
-    const { data: tenantRow } = await supabase
+    if (profileError) {
+      console.error('🔴 DB PROFILES ERROR:', profileError.message);
+    }
+
+    console.log('🟢 MATCHED PROFILE FROM DB:', profile);
+
+    // 3. Fetch tenant unit and property details
+    const { data: tenant } = await supabase
       .from('tenants')
       .select(`
         unit_number,
@@ -61,32 +77,27 @@ export async function GET() {
           caretaker_phone
         )
       `)
-      .eq('user_id', user.id)
+      .or(`user_id.eq.${user.id},email.eq.${user.email || ''}`)
       .maybeSingle();
 
-    const propertyData = Array.isArray(tenantRow?.properties)
-      ? tenantRow.properties[0]
-      : tenantRow?.properties;
+    const propertyData = Array.isArray(tenant?.properties)
+      ? tenant.properties[0]
+      : tenant?.properties;
 
-    // Resolve name: prioritize profileRow.full_name -> auth metadata -> email prefix
-    const resolvedName =
-      profileRow?.full_name ||
-      user.user_metadata?.full_name ||
-      user.user_metadata?.name ||
-      user.email?.split('@')[0] ||
-      'Tenant';
+    // 4. Guaranteed Name Resolution: DB full_name > user_metadata > Email
+    const actualFullName = profile?.full_name || user.user_metadata?.full_name || user.email || 'Tenant';
 
     return NextResponse.json({
       profile: {
-        full_name: resolvedName,
+        full_name: actualFullName,
         property_name: propertyData?.name || '',
-        unit_number: tenantRow?.unit_number || '',
+        unit_number: tenant?.unit_number || '',
         caretaker_name: propertyData?.caretaker_name || '',
         caretaker_phone: propertyData?.caretaker_phone || ''
       }
     });
   } catch (err) {
-    console.error('❌ CRASH IN PROFILE API:', err);
+    console.error('🔴 SERVER ERROR IN PROFILE ROUTE:', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

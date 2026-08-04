@@ -22,14 +22,13 @@ export default function TenantPortalPage() {
     const fetchProfile = async () => {
       try {
         setLoading(true);
-        // Calls your profile endpoint under /tenant/api/profile
         const res = await fetch('/tenant/api/profile');
         if (res.ok) {
           const data = await res.json();
           setProfile(data.profile || null);
         }
       } catch (err) {
-        console.error('Failed to fetch user profile:', err);
+        console.error('Failed to fetch profile:', err);
       } finally {
         setLoading(false);
       }
@@ -85,14 +84,14 @@ export default function TenantPortalPage() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-8 overflow-y-auto">
-        {/* HERO SECTION */}
+        {/* HERO HEADER */}
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-extrabold text-blue-600">
               {loading ? (
-                <span className="animate-pulse text-gray-400">Loading profile...</span>
+                <span className="animate-pulse text-gray-400">Loading user profile...</span>
               ) : (
-                `Welcome Back "${profile?.full_name || 'Tenant'}"`
+                `Welcome Back "${profile?.full_name || ''}"`
               )}
             </h2>
             <p className="text-sm font-medium text-gray-600 mt-1">
@@ -102,7 +101,7 @@ export default function TenantPortalPage() {
             </p>
           </div>
 
-          {/* CARETAKER CALL BUTTON */}
+          {/* CALL CARETAKER BUTTON */}
           {profile?.caretaker_name && (
             <button
               onClick={handleCallCaretaker}
