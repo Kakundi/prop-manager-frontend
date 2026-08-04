@@ -27,25 +27,30 @@ export async function GET() {
       }
     );
 
-    // 1. Get current authenticated auth user
+    // 1. Get current authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
+      console.log('❌ AUTH ERROR OR NO USER SESSION:', authError);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. Fetch full_name from 'profiles' table using user.id
+    console.log('🔍 QUERYING PROFILES FOR USER ID:', user.id);
+
+    // 2. Fetch full_name from 'profiles' table
     const { data: profileRow, error: profileError } = await supabase
       .from('profiles')
-      .select('full_name, email, phone')
+      .select('full_name, email')
       .eq('id', user.id)
       .maybeSingle();
 
     if (profileError) {
-      console.error('Error fetching from profiles table:', profileError);
+      console.error('❌ PROFILES TABLE QUERY ERROR:', profileError.message);
+    } else {
+      console.log('✅ PROFILES ROW FOUND:', profileRow);
     }
 
-    // 3. Fetch unit/property details from 'tenants' table if linked
+    // 3. Query unit/property details from 'tenants' table if available
     const { data: tenantRow } = await supabase
       .from('tenants')
       .select(`
@@ -63,12 +68,17 @@ export async function GET() {
       ? tenantRow.properties[0]
       : tenantRow?.properties;
 
-    // 4. Extract real full name from public.profiles
-    const realFullName = profileRow?.full_name || user.email || 'Tenant';
+    // Resolve name: prioritize profileRow.full_name -> auth metadata -> email prefix
+    const resolvedName =
+      profileRow?.full_name ||
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.email?.split('@')[0] ||
+      'Tenant';
 
     return NextResponse.json({
       profile: {
-        full_name: realFullName,
+        full_name: resolvedName,
         property_name: propertyData?.name || '',
         unit_number: tenantRow?.unit_number || '',
         caretaker_name: propertyData?.caretaker_name || '',
@@ -76,7 +86,7 @@ export async function GET() {
       }
     });
   } catch (err) {
-    console.error('Profile API Error:', err);
+    console.error('❌ CRASH IN PROFILE API:', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
