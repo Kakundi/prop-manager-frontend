@@ -1,39 +1,31 @@
 'use client';
 
-import React from 'react';
-import { Clock, CheckCircle2, XCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Clock, CheckCircle2, XCircle, CreditCard } from 'lucide-react';
 import { PaymentRecord } from '../types';
 
 export const PaymentsTab: React.FC = () => {
-  const paymentHistory: PaymentRecord[] = [
-    {
-      id: '1',
-      reference: 'MPESA-Q88219A',
-      description: 'July Rent Payment',
-      amount: 800,
-      date: '2026-07-01',
-      method: 'M-Pesa Express',
-      status: 'completed',
-    },
-    {
-      id: '2',
-      reference: 'MPESA-Q99102B',
-      description: 'July Water Utility Bill',
-      amount: 180,
-      date: '2026-07-05',
-      method: 'M-Pesa Express',
-      status: 'completed',
-    },
-    {
-      id: '3',
-      reference: 'BANK-REF-77112',
-      description: 'Garbage Collection - July 2026',
-      amount: 50,
-      date: '2026-07-30',
-      method: 'Bank Transfer',
-      status: 'under_review',
-    },
-  ];
+  const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const fetchPayments = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch('/api/tenant/payments');
+        if (res.ok) {
+          const data = await res.json();
+          setPaymentHistory(data.payments || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch payments:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPayments();
+  }, []);
 
   const getStatusBadge = (status: PaymentRecord['status']) => {
     switch (status) {
@@ -58,6 +50,14 @@ export const PaymentsTab: React.FC = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center text-gray-500 font-medium animate-pulse">
+        Loading payment transactions...
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div className="p-6 border-b border-gray-200">
@@ -65,30 +65,40 @@ export const PaymentsTab: React.FC = () => {
         <p className="text-sm text-gray-500">Record of all completed and pending payments.</p>
       </div>
 
-      <table className="w-full text-left border-collapse">
-        <thead>
-          <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">
-            <th className="p-4">Reference</th>
-            <th className="p-4">Description</th>
-            <th className="p-4">Method</th>
-            <th className="p-4">Date</th>
-            <th className="p-4">Amount</th>
-            <th className="p-4">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-200 text-sm">
-          {paymentHistory.map((rec) => (
-            <tr key={rec.id}>
-              <td className="p-4 font-mono text-xs font-semibold text-gray-700">{rec.reference}</td>
-              <td className="p-4 font-medium text-gray-900">{rec.description}</td>
-              <td className="p-4 text-gray-600">{rec.method}</td>
-              <td className="p-4 text-gray-500">{rec.date}</td>
-              <td className="p-4 font-bold text-gray-900">${rec.amount.toFixed(2)}</td>
-              <td className="p-4">{getStatusBadge(rec.status)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {paymentHistory.length === 0 ? (
+        <div className="p-12 text-center flex flex-col items-center justify-center gap-2 text-gray-500">
+          <CreditCard size={36} className="text-gray-400" />
+          <p className="font-semibold text-gray-700">No payment records found</p>
+          <p className="text-xs text-gray-400">You haven't made any transactions yet.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">
+                <th className="p-4">Reference</th>
+                <th className="p-4">Description</th>
+                <th className="p-4">Method</th>
+                <th className="p-4">Date</th>
+                <th className="p-4">Amount</th>
+                <th className="p-4">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 text-sm">
+              {paymentHistory.map((rec) => (
+                <tr key={rec.id}>
+                  <td className="p-4 font-mono text-xs font-semibold text-gray-700">{rec.reference}</td>
+                  <td className="p-4 font-medium text-gray-900">{rec.description}</td>
+                  <td className="p-4 text-gray-600">{rec.method}</td>
+                  <td className="p-4 text-gray-500">{rec.date}</td>
+                  <td className="p-4 font-bold text-gray-900">KES {rec.amount.toFixed(2)}</td>
+                  <td className="p-4">{getStatusBadge(rec.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

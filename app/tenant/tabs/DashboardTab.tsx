@@ -1,53 +1,47 @@
 'use client';
 
-import React, { useState } from 'react';
-import { AlertTriangle, Clock, Gauge, CreditCard, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { AlertTriangle, Clock, Gauge, CreditCard, CheckCircle2, FileX } from 'lucide-react';
 import { TenantInvoice, MeterReadingInfo } from '../types';
 
 export const DashboardTab: React.FC = () => {
-  const [meterInfo] = useState<MeterReadingInfo>({
-    previous_meter_reading: 1420,
-    current_meter_reading: 1460,
-    units_consumed: 40,
-    billing_month: 'August 2026',
-  });
-
-  const [invoices, setInvoices] = useState<TenantInvoice[]>([
-    {
-      id: 'INV-WAT-001',
-      title: 'Water Utility Bill - August 2026',
-      amount: 200,
-      due_date: '2026-08-10',
-      status: 'unpaid',
-      meter_info: {
-        previous_meter_reading: 1420,
-        current_meter_reading: 1460,
-        units_consumed: 40,
-        billing_month: 'August 2026',
-      },
-    },
-    {
-      id: 'INV-RENT-001',
-      title: 'Monthly Rent - August 2026',
-      amount: 800,
-      due_date: '2026-08-01',
-      status: 'overdue',
-    },
-    {
-      id: 'INV-GARB-001',
-      title: 'Garbage Collection - July 2026',
-      amount: 50,
-      due_date: '2026-07-30',
-      status: 'under_review',
-    },
-  ]);
-
+  const [meterInfo, setMeterInfo] = useState<MeterReadingInfo | null>(null);
+  const [invoices, setInvoices] = useState<TenantInvoice[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [payingId, setPayingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        const [invoiceRes, meterRes] = await Promise.all([
+          fetch('/api/tenant/invoices'),
+          fetch('/api/tenant/meter-reading')
+        ]);
+
+        if (invoiceRes.ok) {
+          const invData = await invoiceRes.json();
+          setInvoices(invData.invoices || []);
+        }
+
+        if (meterRes.ok) {
+          const meterData = await meterRes.json();
+          setMeterInfo(meterData.meterInfo || null);
+        }
+      } catch (err) {
+        console.error('Failed to load dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
 
   const handlePayNow = async (invoiceId: string, amount: number) => {
     setPayingId(invoiceId);
     try {
-      const res = await fetch('/tenant/api/pay-invoice', {
+      const res = await fetch('/api/tenant/pay-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoice_id: invoiceId, amount }),
@@ -70,6 +64,14 @@ export const DashboardTab: React.FC = () => {
       setPayingId(null);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="p-12 text-center text-gray-500 font-medium animate-pulse">
+        Loading tenant dashboard...
+      </div>
+    );
+  }
 
   const overdueInvoices = invoices.filter((i) => i.status === 'overdue');
   const reviewInvoices = invoices.filter((i) => i.status === 'under_review');
@@ -107,25 +109,31 @@ export const DashboardTab: React.FC = () => {
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <div className="flex items-center gap-2 mb-4 text-gray-800 font-bold text-lg">
           <Gauge className="text-blue-600" size={22} />
-          <h3>Water Meter Reading Overview ({meterInfo.billing_month})</h3>
+          <h3>Water Meter Reading Overview {meterInfo?.billing_month ? `(${meterInfo.billing_month})` : ''}</h3>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-            <div className="text-xs text-gray-500 font-medium">Previous Meter Reading</div>
-            <div className="text-2xl font-bold text-gray-800 mt-1">{meterInfo.previous_meter_reading}</div>
-          </div>
+        {meterInfo ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="text-xs text-gray-500 font-medium">Previous Meter Reading</div>
+              <div className="text-2xl font-bold text-gray-800 mt-1">{meterInfo.previous_meter_reading}</div>
+            </div>
 
-          <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-            <div className="text-xs text-gray-500 font-medium">Current Meter Reading</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">{meterInfo.current_meter_reading}</div>
-          </div>
+            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="text-xs text-gray-500 font-medium">Current Meter Reading</div>
+              <div className="text-2xl font-bold text-blue-600 mt-1">{meterInfo.current_meter_reading}</div>
+            </div>
 
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="text-xs text-blue-600 font-medium">Total Units Consumed</div>
-            <div className="text-2xl font-bold text-blue-900 mt-1">{meterInfo.units_consumed} units</div>
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-xs text-blue-600 font-medium">Total Units Consumed</div>
+              <div className="text-2xl font-bold text-blue-900 mt-1">{meterInfo.units_consumed} units</div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="p-6 text-center text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-lg text-sm">
+            No current meter reading record found for your unit.
+          </div>
+        )}
       </div>
 
       {/* 3. RAISED INVOICES & DIRECT PAY BUTTON */}
@@ -135,68 +143,76 @@ export const DashboardTab: React.FC = () => {
           <p className="text-sm text-gray-500">Pay your active bills directly from this portal.</p>
         </div>
 
-        <div className="divide-y divide-gray-200">
-          {invoices.map((inv) => (
-            <div key={inv.id} className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-gray-900">{inv.title}</span>
-                  {inv.status === 'overdue' && (
-                    <span className="bg-red-100 text-red-800 text-xs px-2.5 py-0.5 rounded-full font-medium">Overdue</span>
+        {invoices.length === 0 ? (
+          <div className="p-12 text-center flex flex-col items-center justify-center gap-2 text-gray-500">
+            <FileX size={36} className="text-gray-400" />
+            <p className="font-semibold text-gray-700">No raised invoices found</p>
+            <p className="text-xs text-gray-400">You currently have no active or historical invoices on record.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-200">
+            {invoices.map((inv) => (
+              <div key={inv.id} className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-gray-900">{inv.title}</span>
+                    {inv.status === 'overdue' && (
+                      <span className="bg-red-100 text-red-800 text-xs px-2.5 py-0.5 rounded-full font-medium">Overdue</span>
+                    )}
+                    {inv.status === 'under_review' && (
+                      <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-0.5 rounded-full font-medium">Awaiting Review</span>
+                    )}
+                    {inv.status === 'unpaid' && (
+                      <span className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-0.5 rounded-full font-medium">Unpaid</span>
+                    )}
+                  </div>
+
+                  {inv.meter_info && (
+                    <p className="text-xs text-gray-500">
+                      Readings: {inv.meter_info.previous_meter_reading} to {inv.meter_info.current_meter_reading} ({inv.meter_info.units_consumed} units)
+                    </p>
                   )}
-                  {inv.status === 'under_review' && (
-                    <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-0.5 rounded-full font-medium">Awaiting Review</span>
-                  )}
-                  {inv.status === 'unpaid' && (
-                    <span className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-0.5 rounded-full font-medium">Unpaid</span>
-                  )}
+
+                  <div className="text-xs text-gray-500">
+                    Due Date: <span className="font-medium text-gray-700">{inv.due_date}</span>
+                  </div>
                 </div>
 
-                {inv.meter_info && (
-                  <p className="text-xs text-gray-500">
-                    Readings: {inv.meter_info.previous_meter_reading} to {inv.meter_info.current_meter_reading} ({inv.meter_info.units_consumed} units)
-                  </p>
-                )}
+                <div className="flex items-center gap-4 justify-between md:justify-end">
+                  <div className="text-right">
+                    <div className="text-xs text-gray-400">Amount Due</div>
+                    <div className="text-xl font-bold text-gray-900">KES {inv.amount.toFixed(2)}</div>
+                  </div>
 
-                <div className="text-xs text-gray-500">
-                  Due Date: <span className="font-medium text-gray-700">{inv.due_date}</span>
+                  {inv.status === 'under_review' ? (
+                    <button
+                      disabled
+                      className="bg-amber-100 text-amber-800 text-sm font-medium px-5 py-2.5 rounded-lg cursor-not-allowed flex items-center gap-2"
+                    >
+                      <Clock size={16} /> Payment Pending Review
+                    </button>
+                  ) : inv.status === 'paid' ? (
+                    <button
+                      disabled
+                      className="bg-green-100 text-green-800 text-sm font-medium px-5 py-2.5 rounded-lg cursor-not-allowed flex items-center gap-2"
+                    >
+                      <CheckCircle2 size={16} /> Paid
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handlePayNow(inv.id, inv.amount)}
+                      disabled={payingId === inv.id}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-6 py-2.5 rounded-lg transition disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <CreditCard size={16} />
+                      {payingId === inv.id ? 'Processing...' : 'Pay Now'}
+                    </button>
+                  )}
                 </div>
               </div>
-
-              <div className="flex items-center gap-4 justify-between md:justify-end">
-                <div className="text-right">
-                  <div className="text-xs text-gray-400">Amount Due</div>
-                  <div className="text-xl font-bold text-gray-900">${inv.amount.toFixed(2)}</div>
-                </div>
-
-                {inv.status === 'under_review' ? (
-                  <button
-                    disabled
-                    className="bg-amber-100 text-amber-800 text-sm font-medium px-5 py-2.5 rounded-lg cursor-not-allowed flex items-center gap-2"
-                  >
-                    <Clock size={16} /> Payment Pending Review
-                  </button>
-                ) : inv.status === 'paid' ? (
-                  <button
-                    disabled
-                    className="bg-green-100 text-green-800 text-sm font-medium px-5 py-2.5 rounded-lg cursor-not-allowed flex items-center gap-2"
-                  >
-                    <CheckCircle2 size={16} /> Paid
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handlePayNow(inv.id, inv.amount)}
-                    disabled={payingId === inv.id}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-6 py-2.5 rounded-lg transition disabled:opacity-50 flex items-center gap-2"
-                  >
-                    <CreditCard size={16} />
-                    {payingId === inv.id ? 'Processing...' : 'Pay Now'}
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
