@@ -27,60 +27,57 @@ export async function GET() {
       }
     );
 
-    // 1. Get logged-in user from Supabase Auth session
+    // 1. Get logged-in user session
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
+      console.log('🔴 AUTH ERROR OR NO USER:', authError);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. Query 'tenants' table linked to user.id
+    console.log('🟢 LOGGED-IN AUTH USER ID:', user.id);
+    console.log('🟢 USER METADATA:', user.user_metadata);
+    console.log('🟢 USER EMAIL:', user.email);
+
+    // 2. Query tenants table linked to user ID
     const { data: tenant, error: dbError } = await supabase
       .from('tenants')
-      .select(`
-        id,
-        full_name,
-        name,
-        unit_number,
-        properties (
-          name,
-          caretaker_name,
-          caretaker_phone
-        )
-      `)
+      .select('*')
       .eq('user_id', user.id)
       .maybeSingle();
 
     if (dbError) {
-      console.error('Supabase Query Error:', dbError.message);
+      console.error('🔴 DB QUERY ERROR:', dbError);
+    } else {
+      console.log('🟢 DB TENANT ROW RETURNED:', tenant);
     }
 
-    // Handle properties relation array or object
-    const propertyData = Array.isArray(tenant?.properties)
-      ? tenant.properties[0]
-      : tenant?.properties;
+    // Safely combine first_name and last_name if present
+    const combinedName = [tenant?.first_name, tenant?.last_name]
+      .filter(Boolean)
+      .join(' ');
 
-    // 3. Resolve Full Name priority: 
-    // DB full_name -> DB name -> Auth User Metadata -> Auth Email -> Fallback
+    // Resolve Name Priority
     const resolvedName =
       tenant?.full_name ||
       tenant?.name ||
+      (combinedName.length > 0 ? combinedName : null) ||
       user.user_metadata?.full_name ||
       user.user_metadata?.name ||
-      user.email?.split('@')[0] ||
-      'Tenant User';
+      user.email ||
+      'Tenant';
 
     return NextResponse.json({
       profile: {
         full_name: resolvedName,
-        property_name: propertyData?.name || '',
+        property_name: '',
         unit_number: tenant?.unit_number || '',
-        caretaker_name: propertyData?.caretaker_name || '',
-        caretaker_phone: propertyData?.caretaker_phone || ''
+        caretaker_name: '',
+        caretaker_phone: ''
       }
     });
   } catch (err) {
-    console.error('Profile Route API Error:', err);
+    console.error('🔴 PROFILE ROUTE CRASH:', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
