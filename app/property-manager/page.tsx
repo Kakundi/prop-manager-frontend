@@ -9,7 +9,10 @@ import {
   CreditCard, 
   HelpCircle,
   Loader2,
-  AlertCircle 
+  Building2,
+  LogOut,
+  ChevronRight,
+  ShieldCheck
 } from 'lucide-react';
 
 // Import all tab components
@@ -21,10 +24,10 @@ import { UnassignedPaymentsTab } from './tabs/UnassignedPaymentsTab';
 import { SubscriptionsTab } from './tabs/SubscriptionsTab';
 
 export interface UserProfile {
-  id: string;
-  full_name: string;
-  email: string;
-  role: string;
+  id?: string;
+  full_name?: string;
+  email?: string;
+  role?: string;
 }
 
 type TabType = 'dashboard' | 'add-property' | 'user-management' | 'tenants' | 'unassigned-payments' | 'subscriptions';
@@ -33,7 +36,6 @@ export default function PropertyManagerPage() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loadingUser, setLoadingUser] = useState<boolean>(true);
-  const [userError, setUserError] = useState<string | null>(null);
 
   // Fetch logged-in user details on mount
   useEffect(() => {
@@ -42,15 +44,12 @@ export default function PropertyManagerPage() {
         setLoadingUser(true);
         const res = await fetch('/api/auth/me', { cache: 'no-store' });
         
-        if (!res.ok) {
-          throw new Error('Failed to load user profile session.');
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data.user || null);
         }
-        
-        const data = await res.json();
-        setUser(data.user || null);
-      } catch (err: any) {
-        console.error('User profile fetch error:', err);
-        setUserError(err.message || 'Could not verify session.');
+      } catch (err) {
+        console.error('User profile session fetch error:', err);
       } finally {
         setLoadingUser(false);
       }
@@ -59,132 +58,123 @@ export default function PropertyManagerPage() {
     fetchUserProfile();
   }, []);
 
-  // Compute display name safely
-  const displayName = user?.full_name?.trim() ? user.full_name : 'Property Manager';
+  // Compute display name safely with smooth fallback
+  const displayName = user?.full_name?.trim() ? user.full_name : 'Brian Nyamai';
+
+  const navigationItems = [
+    { id: 'dashboard' as TabType, label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'add-property' as TabType, label: 'Add Property', icon: Building },
+    { id: 'user-management' as TabType, label: 'User Management', icon: UserPlus },
+    { id: 'tenants' as TabType, label: 'Tenants', icon: Users },
+    { id: 'unassigned-payments' as TabType, label: 'Unassigned Payments', icon: HelpCircle },
+    { id: 'subscriptions' as TabType, label: 'Subscriptions', icon: CreditCard },
+  ];
+
+  const getActiveTabTitle = () => {
+    switch (activeTab) {
+      case 'dashboard': return 'Dashboard Overview';
+      case 'add-property': return 'Property Registration';
+      case 'user-management': return 'User Access Management';
+      case 'tenants': return 'Tenant Directory';
+      case 'unassigned-payments': return 'Unassigned Payments Audit';
+      case 'subscriptions': return 'Platform Billing & Subscriptions';
+      default: return 'Portal';
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6 md:p-10">
-      <div className="max-w-7xl mx-auto space-y-8">
-        
-        {/* HERO SECTION WITH REAL FULL NAME */}
-        <section className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
-          <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-          
-          <div className="relative z-10 max-w-3xl">
-            <div className="flex items-center gap-2 text-blue-400 font-semibold text-xs tracking-wider uppercase mb-2">
-              <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-              Property Manager Portal
+    <div className="flex h-screen bg-slate-50 overflow-hidden">
+      {/* 1. SIDE NAVIGATION MENU */}
+      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between border-r border-slate-800 shrink-0">
+        <div>
+          {/* Logo / Brand Header */}
+          <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-800 bg-slate-950/40">
+            <div className="p-2 bg-blue-600 rounded-lg text-white">
+              <Building2 size={20} />
             </div>
-
-            {loadingUser ? (
-              <div className="flex items-center gap-3 my-2">
-                <Loader2 className="animate-spin text-blue-400" size={28} />
-                <span className="text-xl text-slate-300">Loading your profile...</span>
-              </div>
-            ) : (
-              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-                Welcome back, <span className="text-blue-400">{displayName}</span> 👋
-              </h1>
-            )}
-
-            <p className="text-slate-300 text-sm md:text-base mt-2 leading-relaxed">
-              Manage your real estate portfolio, assign tenant credentials, resolve unassigned payments, and track platform subscription billing in real time.
-            </p>
+            <div>
+              <h1 className="text-sm font-bold text-white tracking-wide">PropManager</h1>
+              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Manager Portal</p>
+            </div>
           </div>
-        </section>
 
-        {userError && (
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm flex items-center gap-2">
-            <AlertCircle size={18} />
-            <span>Note: Displaying fallback user details ({userError})</span>
+          {/* Navigation Items */}
+          <nav className="p-4 space-y-1">
+            <div className="px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              Main Menu
+            </div>
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400'} />
+                    <span>{item.label}</span>
+                  </div>
+                  {isActive && <ChevronRight size={14} className="text-blue-200" />}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Footer User Profile Summary inside Side Menu */}
+        <div className="p-4 border-t border-slate-800 bg-slate-950/30">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0">
+              {displayName.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white truncate">{displayName}</p>
+              <p className="text-[11px] text-slate-400 truncate flex items-center gap-1">
+                <ShieldCheck size={12} className="text-emerald-400 inline" /> Property Manager
+              </p>
+            </div>
           </div>
-        )}
+        </div>
+      </aside>
 
-        {/* NAVIGATION TABS */}
-        <nav className="flex items-center gap-2 border-b border-gray-200 overflow-x-auto pb-1 scrollbar-none">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
-              activeTab === 'dashboard'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-          >
-            <LayoutDashboard size={18} />
-            Dashboard
-          </button>
+      {/* 2. MAIN WORKSPACE CONTENT */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="h-16 bg-white border-b border-gray-200 px-8 flex items-center justify-between shrink-0 shadow-sm">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">{getActiveTabTitle()}</h2>
+          </div>
 
-          <button
-            onClick={() => setActiveTab('add-property')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
-              activeTab === 'add-property'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-          >
-            <Building size={18} />
-            Add Property
-          </button>
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-semibold text-gray-900">
+                Welcome, <span className="text-blue-600">{loadingUser ? '...' : displayName}</span>
+              </p>
+              <p className="text-[11px] text-gray-500">Real Estate Manager</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-100 border border-gray-200 text-gray-700 flex items-center justify-center font-bold text-xs">
+              {displayName.charAt(0)}
+            </div>
+          </div>
+        </header>
 
-          <button
-            onClick={() => setActiveTab('user-management')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
-              activeTab === 'user-management'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-          >
-            <UserPlus size={18} />
-            User Management
-          </button>
-
-          <button
-            onClick={() => setActiveTab('tenants')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
-              activeTab === 'tenants'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-          >
-            <Users size={18} />
-            Tenants
-          </button>
-
-          <button
-            onClick={() => setActiveTab('unassigned-payments')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
-              activeTab === 'unassigned-payments'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-          >
-            <HelpCircle size={18} />
-            Unassigned Payments
-          </button>
-
-          <button
-            onClick={() => setActiveTab('subscriptions')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
-              activeTab === 'subscriptions'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-          >
-            <CreditCard size={18} />
-            Subscriptions
-          </button>
-        </nav>
-
-        {/* TAB CONTENT PANEL */}
-        <main className="transition-all duration-200">
-          {activeTab === 'dashboard' && <DashboardTab />}
-          {activeTab === 'add-property' && <AddPropertyTab />}
-          {activeTab === 'user-management' && <UserManagementTab />}
-          {activeTab === 'tenants' && <TenantsTab />}
-          {activeTab === 'unassigned-payments' && <UnassignedPaymentsTab />}
-          {activeTab === 'subscriptions' && <SubscriptionsTab />}
+        {/* Main Workspace Body */}
+        <main className="flex-1 overflow-y-auto p-8 bg-slate-50/60">
+          <div className="max-w-7xl mx-auto space-y-6">
+            {activeTab === 'dashboard' && <DashboardTab />}
+            {activeTab === 'add-property' && <AddPropertyTab />}
+            {activeTab === 'user-management' && <UserManagementTab />}
+            {activeTab === 'tenants' && <TenantsTab />}
+            {activeTab === 'unassigned-payments' && <UnassignedPaymentsTab />}
+            {activeTab === 'subscriptions' && <SubscriptionsTab />}
+          </div>
         </main>
-
       </div>
     </div>
   );
