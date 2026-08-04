@@ -27,19 +27,20 @@ export async function GET() {
       }
     );
 
-    // 1. Fetch current auth user
+    // 1. Get logged-in user from Supabase Auth session
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. Query tenant row linked to authenticated user
+    // 2. Query 'tenants' table linked to user.id
     const { data: tenant, error: dbError } = await supabase
       .from('tenants')
       .select(`
         id,
         full_name,
+        name,
         unit_number,
         properties (
           name,
@@ -51,18 +52,27 @@ export async function GET() {
       .maybeSingle();
 
     if (dbError) {
-      console.error('Database query error:', dbError);
+      console.error('Supabase Query Error:', dbError.message);
     }
 
-    // Handle properties array vs single object safely
-    const propertyData = Array.isArray(tenant?.properties) 
-      ? tenant.properties[0] 
+    // Handle properties relation array or object
+    const propertyData = Array.isArray(tenant?.properties)
+      ? tenant.properties[0]
       : tenant?.properties;
 
-    // 3. Construct response using real database values
+    // 3. Resolve Full Name priority: 
+    // DB full_name -> DB name -> Auth User Metadata -> Auth Email -> Fallback
+    const resolvedName =
+      tenant?.full_name ||
+      tenant?.name ||
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.email?.split('@')[0] ||
+      'Tenant User';
+
     return NextResponse.json({
       profile: {
-        full_name: tenant?.full_name || user.user_metadata?.full_name || user.email || '',
+        full_name: resolvedName,
         property_name: propertyData?.name || '',
         unit_number: tenant?.unit_number || '',
         caretaker_name: propertyData?.caretaker_name || '',
@@ -70,7 +80,7 @@ export async function GET() {
       }
     });
   } catch (err) {
-    console.error('Profile API error:', err);
+    console.error('Profile Route API Error:', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
