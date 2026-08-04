@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -10,7 +11,8 @@ import {
   CreditCard,
   Building2,
   ShieldCheck,
-  Loader2
+  Loader2,
+  LogOut
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabaseClient';
@@ -26,9 +28,11 @@ import { SubscriptionsTab } from './tabs/SubscriptionsTab';
 export type ManagerTab = 'dashboard' | 'add-property' | 'users' | 'tenants' | 'unassigned-payments' | 'subscription';
 
 export default function PropertyManagerPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<ManagerTab>('dashboard');
   const [fullName, setFullName] = useState<string>('');
   const [loadingUser, setLoadingUser] = useState<boolean>(true);
+  const [loggingOut, setLoggingOut] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -76,6 +80,18 @@ export default function PropertyManagerPage() {
 
     fetchUserProfile();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      setLoggingOut(true);
+      await supabase.auth.signOut();
+      router.push('/login');
+    } catch (err) {
+      console.error('Error during logout:', err);
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   const displayName = fullName && fullName.trim() !== '' ? fullName : 'Property Manager';
 
@@ -129,8 +145,8 @@ export default function PropertyManagerPage() {
           </nav>
         </div>
 
-        {/* Sidebar Footer User Info */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/30">
+        {/* Sidebar Footer: User Info & Log Out Button */}
+        <div className="p-4 border-t border-slate-800 bg-slate-950/30 space-y-3">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0">
               {loadingUser ? <Loader2 size={14} className="animate-spin" /> : displayName.charAt(0).toUpperCase()}
@@ -144,6 +160,19 @@ export default function PropertyManagerPage() {
               </p>
             </div>
           </div>
+
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800/80 hover:bg-red-600/20 text-slate-300 hover:text-red-400 border border-slate-700/50 hover:border-red-500/30 text-xs font-medium transition-all"
+          >
+            {loggingOut ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <LogOut size={14} />
+            )}
+            <span>{loggingOut ? 'Signing out...' : 'Log Out'}</span>
+          </button>
         </div>
       </aside>
 
