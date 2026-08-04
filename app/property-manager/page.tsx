@@ -10,12 +10,11 @@ import {
   HelpCircle,
   Loader2,
   Building2,
-  LogOut,
-  ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  ChevronRight
 } from 'lucide-react';
 
-// Import all tab components
+// Import tab components
 import { DashboardTab } from './tabs/DashboardTab';
 import { AddPropertyTab } from './tabs/AddPropertyTab';
 import { UserManagementTab } from './tabs/UserManagementTab';
@@ -37,7 +36,7 @@ export default function PropertyManagerPage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loadingUser, setLoadingUser] = useState<boolean>(true);
 
-  // Fetch logged-in user details on mount
+  // Fetch authenticated user profile directly from database/session endpoint
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
@@ -46,10 +45,12 @@ export default function PropertyManagerPage() {
         
         if (res.ok) {
           const data = await res.json();
-          setUser(data.user || null);
+          if (data?.user) {
+            setUser(data.user);
+          }
         }
       } catch (err) {
-        console.error('User profile session fetch error:', err);
+        console.error('Error fetching user profile from database:', err);
       } finally {
         setLoadingUser(false);
       }
@@ -58,8 +59,8 @@ export default function PropertyManagerPage() {
     fetchUserProfile();
   }, []);
 
-  // Compute display name safely with smooth fallback
-  const displayName = user?.full_name?.trim() ? user.full_name : 'Brian Nyamai';
+  // Format real full name directly from DB record, fallback gracefully if loading
+  const realFullName = user?.full_name?.trim() ? user.full_name : null;
 
   const navigationItems = [
     { id: 'dashboard' as TabType, label: 'Dashboard', icon: LayoutDashboard },
@@ -70,24 +71,12 @@ export default function PropertyManagerPage() {
     { id: 'subscriptions' as TabType, label: 'Subscriptions', icon: CreditCard },
   ];
 
-  const getActiveTabTitle = () => {
-    switch (activeTab) {
-      case 'dashboard': return 'Dashboard Overview';
-      case 'add-property': return 'Property Registration';
-      case 'user-management': return 'User Access Management';
-      case 'tenants': return 'Tenant Directory';
-      case 'unassigned-payments': return 'Unassigned Payments Audit';
-      case 'subscriptions': return 'Platform Billing & Subscriptions';
-      default: return 'Portal';
-    }
-  };
-
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* 1. SIDE NAVIGATION MENU */}
+      {/* SIDEBAR NAVIGATION */}
       <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between border-r border-slate-800 shrink-0">
         <div>
-          {/* Logo / Brand Header */}
+          {/* App Brand Header */}
           <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-800 bg-slate-950/40">
             <div className="p-2 bg-blue-600 rounded-lg text-white">
               <Building2 size={20} />
@@ -98,7 +87,7 @@ export default function PropertyManagerPage() {
             </div>
           </div>
 
-          {/* Navigation Items */}
+          {/* Navigation Links */}
           <nav className="p-4 space-y-1">
             <div className="px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
               Main Menu
@@ -127,14 +116,16 @@ export default function PropertyManagerPage() {
           </nav>
         </div>
 
-        {/* Footer User Profile Summary inside Side Menu */}
+        {/* User Sidebar Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/30">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0">
-              {displayName.charAt(0)}
+              {loadingUser ? <Loader2 size={14} className="animate-spin" /> : (realFullName ? realFullName.charAt(0) : 'U')}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-white truncate">{displayName}</p>
+              <p className="text-xs font-semibold text-white truncate">
+                {loadingUser ? 'Loading profile...' : (realFullName || 'Authenticated User')}
+              </p>
               <p className="text-[11px] text-slate-400 truncate flex items-center gap-1">
                 <ShieldCheck size={12} className="text-emerald-400 inline" /> Property Manager
               </p>
@@ -143,30 +134,39 @@ export default function PropertyManagerPage() {
         </div>
       </aside>
 
-      {/* 2. MAIN WORKSPACE CONTENT */}
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Header Bar */}
-        <header className="h-16 bg-white border-b border-gray-200 px-8 flex items-center justify-between shrink-0 shadow-sm">
-          <div>
-            <h2 className="text-lg font-bold text-gray-800">{getActiveTabTitle()}</h2>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-xs font-semibold text-gray-900">
-                Welcome, <span className="text-blue-600">{loadingUser ? '...' : displayName}</span>
+        
+        {/* TOP WORKSPACE HEADER / HERO BANNER (Consistent with portal pages) */}
+        <header className="bg-slate-900 border-b border-slate-800 px-8 py-6 text-white shrink-0 shadow-md">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-blue-400 font-semibold text-xs tracking-wider uppercase mb-1">
+                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                Property Manager Portal
+              </div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+                Welcome back,{' '}
+                <span className="text-blue-400">
+                  {loadingUser ? (
+                    <span className="inline-flex items-center gap-2 text-slate-300 text-lg">
+                      <Loader2 size={18} className="animate-spin" /> Fetching DB user profile...
+                    </span>
+                  ) : (
+                    realFullName || 'Property Manager'
+                  )}
+                </span> 👋
+              </h1>
+              <p className="text-slate-300 text-xs md:text-sm mt-1">
+                Manage your real estate portfolio, assign tenant credentials, resolve unassigned payments, and track platform subscription billing in real time.
               </p>
-              <p className="text-[11px] text-gray-500">Real Estate Manager</p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-slate-100 border border-gray-200 text-gray-700 flex items-center justify-center font-bold text-xs">
-              {displayName.charAt(0)}
             </div>
           </div>
         </header>
 
-        {/* Main Workspace Body */}
+        {/* TAB WORKSPACE */}
         <main className="flex-1 overflow-y-auto p-8 bg-slate-50/60">
-          <div className="max-w-7xl mx-auto space-y-6">
+          <div className="max-w-7xl mx-auto">
             {activeTab === 'dashboard' && <DashboardTab />}
             {activeTab === 'add-property' && <AddPropertyTab />}
             {activeTab === 'user-management' && <UserManagementTab />}
