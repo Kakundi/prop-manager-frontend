@@ -6,13 +6,15 @@ import {
   Gauge, 
   UserPlus, 
   History, 
-  MessageSquare, 
   Wrench 
 } from 'lucide-react';
 import { DashboardTab } from './tabs/DashboardTab';
 import { MeterReadingTab } from './tabs/MeterReadingTab';
 import { AddTenantTab } from './tabs/AddTenantTab';
 import { PaymentsTab } from './tabs/PaymentsTab';
+
+// Export the type expected by Sidebar.tsx
+export type CaretakerTab = 'dashboard' | 'meter' | 'add-tenant' | 'payments' | 'requests' | 'settings';
 
 interface CaretakerProfile {
   full_name: string;
@@ -21,7 +23,7 @@ interface CaretakerProfile {
 }
 
 export default function CaretakerPortalPage() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'meter' | 'add-tenant' | 'payments'>('dashboard');
+  const [activeTab, setActiveTab] = useState<CaretakerTab>('dashboard');
   const [profile, setProfile] = useState<CaretakerProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -48,7 +50,6 @@ export default function CaretakerPortalPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
-      {/* SIDEBAR NAVIGATION */}
       <aside className="w-64 bg-slate-900 text-white p-6 flex flex-col justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold text-white mb-1 tracking-wide flex items-center gap-2">
@@ -113,9 +114,7 @@ export default function CaretakerPortalPage() {
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-8 overflow-y-auto">
-        {/* HERO HEADER */}
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-8">
           <h2 className="text-2xl font-extrabold text-emerald-700">
             {loading ? (
@@ -129,7 +128,6 @@ export default function CaretakerPortalPage() {
           </p>
         </div>
 
-        {/* TAB CONTENTS */}
         {activeTab === 'dashboard' && <DashboardTab propertyId={profile?.assigned_property_id} propertyName={profile?.assigned_property_name} />}
         {activeTab === 'meter' && <MeterReadingTab propertyId={profile?.assigned_property_id} />}
         {activeTab === 'add-tenant' && <AddTenantTab propertyId={profile?.assigned_property_id} />}
