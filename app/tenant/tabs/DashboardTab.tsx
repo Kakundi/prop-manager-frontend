@@ -1,14 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Clock, Gauge, CreditCard, CheckCircle2, FileX } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, Clock, Gauge, CreditCard, CheckCircle2, FileX, LogOut } from 'lucide-react';
 import { TenantInvoice, MeterReadingInfo } from '../types';
 
 export const DashboardTab: React.FC = () => {
+  const router = useRouter();
   const [meterInfo, setMeterInfo] = useState<MeterReadingInfo | null>(null);
   const [invoices, setInvoices] = useState<TenantInvoice[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [payingId, setPayingId] = useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -37,6 +40,18 @@ export const DashboardTab: React.FC = () => {
 
     fetchDashboardData();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      await fetch('/api/auth/logout', { method: 'POST' });
+      router.push('/login');
+    } catch (err) {
+      console.error('Logout failed:', err);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const handlePayNow = async (invoiceId: string, amount: number) => {
     setPayingId(invoiceId);
@@ -78,6 +93,22 @@ export const DashboardTab: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {/* HEADER WITH LOGOUT */}
+      <div className="flex items-center justify-between bg-white p-4 px-6 rounded-xl border border-gray-200 shadow-sm">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Tenant Dashboard</h2>
+          <p className="text-xs text-gray-500">Manage utilities, active invoices, and payments</p>
+        </div>
+        <button
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition disabled:opacity-50"
+        >
+          <LogOut size={16} />
+          {isLoggingOut ? 'Logging out...' : 'Log Out'}
+        </button>
+      </div>
+
       {/* 1. NOTIFICATION ALERTS SECTION */}
       <div className="space-y-3">
         {overdueInvoices.length > 0 && (
