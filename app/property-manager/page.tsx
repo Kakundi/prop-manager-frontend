@@ -13,6 +13,8 @@ import {
   Loader2
 } from 'lucide-react';
 
+import { supabase } from '@/lib/supabaseClient';
+
 // Import tab components
 import { DashboardTab } from './tabs/DashboardTab';
 import { AddPropertyTab } from './tabs/AddPropertyTab';
@@ -28,29 +30,45 @@ export default function PropertyManagerPage() {
   const [fullName, setFullName] = useState<string>('');
   const [loadingUser, setLoadingUser] = useState<boolean>(true);
 
-  // Fetch full_name directly from database session API
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
         setLoadingUser(true);
-        const res = await fetch('/api/auth/me', { cache: 'no-store' });
-        
-        if (res.ok) {
-          const data = await res.json();
-          
-          const name = 
-            data?.full_name || 
-            data?.profile?.full_name || 
-            data?.user?.full_name || 
-            data?.user?.user_metadata?.full_name ||
-            '';
 
-          if (name.trim()) {
-            setFullName(name.trim());
+        // 1. Fetch current auth user directly from client Supabase instance
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (user) {
+          // Check user metadata first
+          const metaName = user.user_metadata?.full_name || user.user_metadata?.name;
+          if (metaName && typeof metaName === 'string' && metaName.trim()) {
+            setFullName(metaName.trim());
+          }
+
+          // 2. Query profiles database table directly
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name, name')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          const dbName = profile?.full_name || profile?.name;
+          if (dbName && typeof dbName === 'string' && dbName.trim()) {
+            setFullName(dbName.trim());
+          } else if (!metaName && user.email) {
+            // Fallback to email prefix if no name exists in profile row
+            setFullName(user.email.split('@')[0]);
+          }
+        } else {
+          // 3. Fallback to API endpoint fetch if client session is in cookies
+          const res = await fetch('/api/auth/me', { cache: 'no-store' });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.full_name) setFullName(data.full_name);
           }
         }
       } catch (err) {
-        console.error('Error fetching database profile full_name:', err);
+        console.error('Error fetching profile full_name:', err);
       } finally {
         setLoadingUser(false);
       }
@@ -119,7 +137,7 @@ export default function PropertyManagerPage() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-white truncate">
-                {loadingUser ? 'Loading profile...' : displayName}
+                {loadingUser ? 'Loading...' : displayName}
               </p>
               <p className="text-[11px] text-slate-400 truncate flex items-center gap-1">
                 <ShieldCheck size={12} className="text-emerald-400 inline" /> Property Manager
@@ -145,7 +163,7 @@ export default function PropertyManagerPage() {
                 <span className="text-blue-400">
                   {loadingUser ? (
                     <span className="inline-flex items-center gap-2 text-slate-300 text-lg font-normal">
-                      <Loader2 size={18} className="animate-spin" /> Fetching database profile...
+                      <Loader2 size={18} className="animate-spin" /> Fetching profile...
                     </span>
                   ) : (
                     displayName
@@ -173,4 +191,4 @@ export default function PropertyManagerPage() {
       </div>
     </div>
   );
-}// Trigger clean deployment
+}
