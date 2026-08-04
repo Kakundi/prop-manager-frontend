@@ -22,10 +22,17 @@ export default function TenantPortalPage() {
     const fetchProfile = async () => {
       try {
         setLoading(true);
-        const res = await fetch('/tenant/api/profile');
+        const res = await fetch('/tenant/api/profile', { cache: 'no-store' });
+        
         if (res.ok) {
           const data = await res.json();
-          setProfile(data.profile || null);
+          if (data?.profile?.full_name) {
+            setProfile(data.profile);
+          } else {
+            console.warn('API returned success but profile full_name was empty:', data);
+          }
+        } else {
+          console.error(`Profile fetch HTTP error: ${res.status} ${res.statusText}`);
         }
       } catch (err) {
         console.error('Failed to fetch profile:', err);
@@ -91,7 +98,7 @@ export default function TenantPortalPage() {
               {loading ? (
                 <span className="animate-pulse text-gray-400">Loading user profile...</span>
               ) : (
-                `Welcome Back "${profile?.full_name || ''}"`
+                `Welcome Back ${profile?.full_name ? `"${profile.full_name}"` : 'Tenant'}`
               )}
             </h2>
             <p className="text-sm font-medium text-gray-600 mt-1">
