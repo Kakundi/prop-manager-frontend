@@ -27,57 +27,56 @@ export async function GET() {
       }
     );
 
-    // 1. Get logged-in user session
+    // 1. Get current authenticated auth user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      console.log('🔴 AUTH ERROR OR NO USER:', authError);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('🟢 LOGGED-IN AUTH USER ID:', user.id);
-    console.log('🟢 USER METADATA:', user.user_metadata);
-    console.log('🟢 USER EMAIL:', user.email);
+    // 2. Fetch full_name from 'profiles' table using user.id
+    const { data: profileRow, error: profileError } = await supabase
+      .from('profiles')
+      .select('full_name, email, phone')
+      .eq('id', user.id)
+      .maybeSingle();
 
-    // 2. Query tenants table linked to user ID
-    const { data: tenant, error: dbError } = await supabase
+    if (profileError) {
+      console.error('Error fetching from profiles table:', profileError);
+    }
+
+    // 3. Fetch unit/property details from 'tenants' table if linked
+    const { data: tenantRow } = await supabase
       .from('tenants')
-      .select('*')
+      .select(`
+        unit_number,
+        properties (
+          name,
+          caretaker_name,
+          caretaker_phone
+        )
+      `)
       .eq('user_id', user.id)
       .maybeSingle();
 
-    if (dbError) {
-      console.error('🔴 DB QUERY ERROR:', dbError);
-    } else {
-      console.log('🟢 DB TENANT ROW RETURNED:', tenant);
-    }
+    const propertyData = Array.isArray(tenantRow?.properties)
+      ? tenantRow.properties[0]
+      : tenantRow?.properties;
 
-    // Safely combine first_name and last_name if present
-    const combinedName = [tenant?.first_name, tenant?.last_name]
-      .filter(Boolean)
-      .join(' ');
-
-    // Resolve Name Priority
-    const resolvedName =
-      tenant?.full_name ||
-      tenant?.name ||
-      (combinedName.length > 0 ? combinedName : null) ||
-      user.user_metadata?.full_name ||
-      user.user_metadata?.name ||
-      user.email ||
-      'Tenant';
+    // 4. Extract real full name from public.profiles
+    const realFullName = profileRow?.full_name || user.email || 'Tenant';
 
     return NextResponse.json({
       profile: {
-        full_name: resolvedName,
-        property_name: '',
-        unit_number: tenant?.unit_number || '',
-        caretaker_name: '',
-        caretaker_phone: ''
+        full_name: realFullName,
+        property_name: propertyData?.name || '',
+        unit_number: tenantRow?.unit_number || '',
+        caretaker_name: propertyData?.caretaker_name || '',
+        caretaker_phone: propertyData?.caretaker_phone || ''
       }
     });
   } catch (err) {
-    console.error('🔴 PROFILE ROUTE CRASH:', err);
+    console.error('Profile API Error:', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
