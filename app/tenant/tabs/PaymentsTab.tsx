@@ -2,32 +2,49 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Clock, CheckCircle2, XCircle, CreditCard, LogOut } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, CreditCard, LogOut, User, Home, UserCheck } from 'lucide-react';
 import { PaymentRecord } from '../types';
+
+interface TenantProfile {
+  name: string;
+  property_name: string;
+  unit_number: string;
+  caretaker_name: string;
+}
 
 export const PaymentsTab: React.FC = () => {
   const router = useRouter();
+  const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
 
   useEffect(() => {
-    const fetchPayments = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const res = await fetch('/api/tenant/payments');
-        if (res.ok) {
-          const data = await res.json();
-          setPaymentHistory(data.payments || []);
+        const [profileRes, paymentsRes] = await Promise.all([
+          fetch('/api/tenant/profile'),
+          fetch('/api/tenant/payments')
+        ]);
+
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          setProfile(profileData.profile || null);
+        }
+
+        if (paymentsRes.ok) {
+          const paymentsData = await paymentsRes.json();
+          setPaymentHistory(paymentsData.payments || []);
         }
       } catch (err) {
-        console.error('Failed to fetch payments:', err);
+        console.error('Failed to fetch payment tab data:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchPayments();
+    fetchData();
   }, []);
 
   const handleLogout = async () => {
@@ -68,27 +85,52 @@ export const PaymentsTab: React.FC = () => {
   if (loading) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center text-gray-500 font-medium animate-pulse">
-        Loading payment transactions...
+        Loading payment transactions & tenant info...
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* HEADER WITH LOGOUT */}
-      <div className="flex items-center justify-between bg-white p-4 px-6 rounded-xl border border-gray-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Payment History</h2>
-          <p className="text-xs text-gray-500">Record of all completed and pending payments</p>
+      {/* USER & PROPERTY HEADER */}
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <User size={20} className="text-gray-600" />
+              {profile?.name || 'Logged-in Tenant'} — Payment Ledger
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">Historical log of all submitted and verified transactions</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition disabled:opacity-50"
+          >
+            <LogOut size={16} />
+            {isLoggingOut ? 'Logging out...' : 'Log Out'}
+          </button>
         </div>
-        <button
-          onClick={handleLogout}
-          disabled={isLoggingOut}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition disabled:opacity-50"
-        >
-          <LogOut size={16} />
-          {isLoggingOut ? 'Logging out...' : 'Log Out'}
-        </button>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+            <Home className="text-blue-600 shrink-0" size={18} />
+            <div>
+              <div className="text-xs text-gray-500 font-medium">Property &amp; Unit</div>
+              <div className="font-semibold text-gray-800">
+                {profile?.property_name ? `${profile.property_name} (Unit ${profile.unit_number})` : 'N/A'}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+            <UserCheck className="text-emerald-600 shrink-0" size={18} />
+            <div>
+              <div className="text-xs text-gray-500 font-medium">Assigned Caretaker</div>
+              <div className="font-semibold text-gray-800">{profile?.caretaker_name || 'N/A'}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* PAYMENT TABLE SECTION */}

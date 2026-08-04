@@ -2,11 +2,31 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, Clock, Gauge, CreditCard, CheckCircle2, FileX, LogOut } from 'lucide-react';
+import { 
+  AlertTriangle, 
+  Clock, 
+  Gauge, 
+  CreditCard, 
+  CheckCircle2, 
+  FileX, 
+  LogOut, 
+  User, 
+  Home, 
+  UserCheck 
+} from 'lucide-react';
 import { TenantInvoice, MeterReadingInfo } from '../types';
+
+interface TenantProfile {
+  name: string;
+  property_name: string;
+  unit_number: string;
+  caretaker_name: string;
+  caretaker_phone?: string;
+}
 
 export const DashboardTab: React.FC = () => {
   const router = useRouter();
+  const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [meterInfo, setMeterInfo] = useState<MeterReadingInfo | null>(null);
   const [invoices, setInvoices] = useState<TenantInvoice[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -17,10 +37,16 @@ export const DashboardTab: React.FC = () => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        const [invoiceRes, meterRes] = await Promise.all([
+        const [profileRes, invoiceRes, meterRes] = await Promise.all([
+          fetch('/api/tenant/profile'),
           fetch('/api/tenant/invoices'),
           fetch('/api/tenant/meter-reading')
         ]);
+
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          setProfile(profileData.profile || null);
+        }
 
         if (invoiceRes.ok) {
           const invData = await invoiceRes.json();
@@ -32,7 +58,7 @@ export const DashboardTab: React.FC = () => {
           setMeterInfo(meterData.meterInfo || null);
         }
       } catch (err) {
-        console.error('Failed to load dashboard data:', err);
+        console.error('Failed to load tenant dashboard data:', err);
       } finally {
         setLoading(false);
       }
@@ -83,7 +109,7 @@ export const DashboardTab: React.FC = () => {
   if (loading) {
     return (
       <div className="p-12 text-center text-gray-500 font-medium animate-pulse">
-        Loading tenant dashboard...
+        Loading tenant dashboard & profile...
       </div>
     );
   }
@@ -93,20 +119,57 @@ export const DashboardTab: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      {/* HEADER WITH LOGOUT */}
-      <div className="flex items-center justify-between bg-white p-4 px-6 rounded-xl border border-gray-200 shadow-sm">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Tenant Dashboard</h2>
-          <p className="text-xs text-gray-500">Manage utilities, active invoices, and payments</p>
+      {/* REAL USER & PROPERTY HEADER CARD */}
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+          <div>
+            <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">Tenant Portal</span>
+            <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2 mt-0.5">
+              <User className="text-gray-600" size={22} />
+              {profile?.name || 'Logged-in Tenant'}
+            </h2>
+          </div>
+          <button
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="self-start md:self-auto flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition disabled:opacity-50"
+          >
+            <LogOut size={16} />
+            {isLoggingOut ? 'Logging out...' : 'Log Out'}
+          </button>
         </div>
-        <button
-          onClick={handleLogout}
-          disabled={isLoggingOut}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition disabled:opacity-50"
-        >
-          <LogOut size={16} />
-          {isLoggingOut ? 'Logging out...' : 'Log Out'}
-        </button>
+
+        {/* PROPERTY, UNIT, AND CARETAKER INFO BAR */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-1 text-sm">
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+            <Home className="text-blue-600 shrink-0" size={20} />
+            <div>
+              <div className="text-xs text-gray-500 font-medium">Property &amp; Unit</div>
+              <div className="font-semibold text-gray-800">
+                {profile?.property_name ? `${profile.property_name} — Unit ${profile.unit_number}` : 'No assigned unit'}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+            <UserCheck className="text-emerald-600 shrink-0" size={20} />
+            <div>
+              <div className="text-xs text-gray-500 font-medium">Assigned Caretaker</div>
+              <div className="font-semibold text-gray-800">
+                {profile?.caretaker_name || 'Unassigned'}
+                {profile?.caretaker_phone ? ` (${profile.caretaker_phone})` : ''}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-blue-50/60 rounded-lg border border-blue-100">
+            <CreditCard className="text-blue-600 shrink-0" size={20} />
+            <div>
+              <div className="text-xs text-blue-600 font-medium">Active Invoices</div>
+              <div className="font-semibold text-blue-900">{invoices.length} Raised</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 1. NOTIFICATION ALERTS SECTION */}
