@@ -1,45 +1,101 @@
 'use client';
 
-import React, { useState } from 'react';
-import { UserPlus, Mail, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { UserPlus, Mail, CheckCircle, AlertCircle } from 'lucide-react';
 
-export const AddTenantTab: React.FC = () => {
+interface Property {
+  id: string;
+  name: string;
+}
+
+interface Unit {
+  id: string;
+  unit_number: string;
+}
+
+export const AddTenantTab: React.FC<{ propertyId?: string }> = ({ propertyId }) => {
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>(propertyId || '');
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('');
+  
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [unitNumber, setUnitNumber] = useState('');
+  
   const [loading, setLoading] = useState(false);
+  const [fetchingUnits, setFetchingUnits] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const availableUnits = ['Apt 1A', 'Apt 1B', 'Apt 2A', 'Apt 2B', 'Apt 3A'];
+  // 1. Fetch available properties
+  useEffect(() => {
+    const fetchProperties = async () => {
+      try {
+        const res = await fetch('/caretaker/api/properties');
+        if (res.ok) {
+          const data = await res.json();
+          setProperties(data.properties || []);
+          if (!selectedPropertyId && data.properties?.length > 0) {
+            setSelectedPropertyId(data.properties[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch properties:', err);
+      }
+    };
+    fetchProperties();
+  }, []);
+
+  // 2. Fetch units when property changes
+  useEffect(() => {
+    if (!selectedPropertyId) return;
+    const fetchUnits = async () => {
+      try {
+        setFetchingUnits(true);
+        const res = await fetch(`/caretaker/api/units?property_id=${selectedPropertyId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setUnits(data.units || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch units:', err);
+      } finally {
+        setFetchingUnits(false);
+      }
+    };
+    fetchUnits();
+  }, [selectedPropertyId]);
 
   const handleInviteTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setSuccessMsg(null);
+    setErrorMsg(null);
 
     try {
-      const res = await fetch('/property-manager/api/invite-user', {
+      const res = await fetch('/caretaker/api/invite-tenant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           full_name: fullName,
           email,
           phone,
-          role: 'tenant',
-          unit_number: unitNumber,
+          property_id: selectedPropertyId,
+          unit_id: selectedUnitId,
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to send verification link.');
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Failed to send verification link.');
 
       setSuccessMsg(`Verification link successfully emailed to ${email}`);
       setFullName('');
       setEmail('');
       setPhone('');
-      setUnitNumber('');
+      setSelectedUnitId('');
     } catch (err: any) {
-      alert(err.message || 'Error triggering invite email.');
+      setErrorMsg(err.message || 'Error triggering invite email.');
     } finally {
       setLoading(false);
     }
@@ -54,7 +110,7 @@ export const AddTenantTab: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-gray-800">Add New Tenant</h2>
           <p className="text-sm text-gray-500">
-            Assign tenants to units and send verification links for password creation.
+            Assign tenants to units and trigger a verification link for account setup.
           </p>
         </div>
       </div>
@@ -65,11 +121,52 @@ export const AddTenantTab: React.FC = () => {
         </div>
       )}
 
+      {errorMsg && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm mb-6 flex items-center gap-2">
+          <AlertCircle size={18} /> {errorMsg}
+        </div>
+      )}
+
       <form onSubmit={handleInviteTenant} className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Select Property</label>
+            <select
+              required
+              value={selectedPropertyId}
+              onChange={(e) => setSelectedPropertyId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
+            >
+              <option value="">-- Select Property --</option>
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Assign Unit</label>
+            <select
+              required
+              disabled={fetchingUnits || units.length === 0}
+              value={selectedUnitId}
+              onChange={(e) => setSelectedUnitId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white disabled:bg-gray-100"
+            >
+              <option value="">
+                {fetchingUnits ? 'Loading units...' : units.length === 0 ? 'No units found' : '-- Select Unit --'}
+              </option>
+              {units.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  Unit {unit.unit_number}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">
-            Tenant Full Name
-          </label>
+          <label className="block text-sm font-semibold text-gray-700 mb-1">Tenant Full Name</label>
           <input
             type="text"
             required
@@ -82,9 +179,7 @@ export const AddTenantTab: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Email Address
-            </label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
             <input
               type="email"
               required
@@ -96,9 +191,7 @@ export const AddTenantTab: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Phone Number
-            </label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Phone Number</label>
             <input
               type="tel"
               required
@@ -110,28 +203,9 @@ export const AddTenantTab: React.FC = () => {
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">
-            Assign Unit
-          </label>
-          <select
-            required
-            value={unitNumber}
-            onChange={(e) => setUnitNumber(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white"
-          >
-            <option value="">-- Select Unit --</option>
-            {availableUnits.map((unit) => (
-              <option key={unit} value={unit}>
-                {unit}
-              </option>
-            ))}
-          </select>
-        </div>
-
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !selectedUnitId}
           className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
         >
           <Mail size={18} />
