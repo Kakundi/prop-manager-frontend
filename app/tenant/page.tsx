@@ -6,7 +6,7 @@ import { DashboardTab } from './tabs/DashboardTab';
 import { PaymentsTab } from './tabs/PaymentsTab';
 
 interface TenantProfile {
-  name: string;
+  full_name: string;
   property_name: string;
   unit_number: string;
   caretaker_name?: string;
@@ -25,10 +25,11 @@ export default function TenantPortalPage() {
         const res = await fetch('/api/tenant/profile');
         if (res.ok) {
           const data = await res.json();
+          // Sets the real profile object returned directly from Supabase
           setProfile(data.profile || null);
         }
       } catch (err) {
-        console.error('Failed to fetch profile header:', err);
+        console.error('Failed to fetch user profile from DB:', err);
       } finally {
         setLoading(false);
       }
@@ -84,16 +85,14 @@ export default function TenantPortalPage() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 p-8 overflow-y-auto">
-        {/* REAL DYNAMIC TOP HEADER */}
+        {/* HERO SECTION - RENDER ACTUAL USER NAME FROM SUPABASE */}
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-extrabold text-blue-600">
               {loading ? (
                 <span className="animate-pulse text-gray-400">Loading user profile...</span>
-              ) : profile?.name ? (
-                `Welcome Back "${profile.name}"`
               ) : (
-                'Welcome Back'
+                `Welcome Back "${profile?.full_name || ''}"`
               )}
             </h2>
             <p className="text-sm font-medium text-gray-600 mt-1">
@@ -103,7 +102,7 @@ export default function TenantPortalPage() {
             </p>
           </div>
 
-          {/* CARETAKER CALL BUTTON - SHOWS ONLY IF CARETAKER IS ASSIGNED */}
+          {/* CARETAKER CALL BUTTON */}
           {profile?.caretaker_name && (
             <button
               onClick={handleCallCaretaker}
