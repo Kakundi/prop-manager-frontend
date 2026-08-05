@@ -6,6 +6,8 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardTab } from './tabs/DashboardTab';
 import { AddUsersTab } from './tabs/AddUsersTab';
+import { SubscribersTab } from './tabs/SubscribersTab';
+import { GenerateInvoiceTab } from './tabs/GenerateInvoiceTab';
 import { UnassignedPaymentsHubTab } from './tabs/UnassignedPaymentsHubTab';
 import { TenantUnassignedPaymentsTab } from './tabs/TenantUnassignedPaymentsTab';
 import { SaaSUnassignedPaymentsTab } from './tabs/SaaSUnassignedPaymentsTab';
@@ -48,6 +50,8 @@ export default function SuperAdminPage() {
         {/* TAB ROUTING AREA */}
         <main className="flex-1 overflow-y-auto p-6">
           {activeTab === 'dashboard' && <DashboardTab />}
+          {activeTab === 'subscribers' && <SubscribersTab />}
+          {activeTab === 'generate-invoice' && <GenerateInvoiceTab />}
           {activeTab === 'add-users' && <AddUsersTab />}
           {activeTab === 'unassigned-payments' && (
             <UnassignedPaymentsHubTab setActiveTab={setActiveTab} />

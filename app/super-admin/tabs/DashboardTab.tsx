@@ -4,10 +4,26 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { InvoiceMetrics } from '../types';
 
+interface ExtendedInvoiceMetrics extends InvoiceMetrics {
+  partialAmount?: number;
+  partialCount?: number;
+}
+
 export const DashboardTab: React.FC = () => {
-  const [metrics, setMetrics] = useState<InvoiceMetrics>({
+  const [metrics, setMetrics] = useState<{
+    paidAmount: number;
+    paidCount: number;
+    partialAmount: number;
+    partialCount: number;
+    unpaidAmount: number;
+    unpaidCount: number;
+    overdueAmount: number;
+    overdueCount: number;
+  }>({
     paidAmount: 0,
     paidCount: 0,
+    partialAmount: 0,
+    partialCount: 0,
     unpaidAmount: 0,
     unpaidCount: 0,
     overdueAmount: 0,
@@ -24,6 +40,8 @@ export const DashboardTab: React.FC = () => {
         const initial = {
           paidAmount: 0,
           paidCount: 0,
+          partialAmount: 0,
+          partialCount: 0,
           unpaidAmount: 0,
           unpaidCount: 0,
           overdueAmount: 0,
@@ -31,14 +49,20 @@ export const DashboardTab: React.FC = () => {
         };
 
         const result = data.reduce((acc, inv) => {
-          if (inv.status === 'PAID') {
-            acc.paidAmount += inv.amount;
+          const status = inv.status?.toUpperCase();
+          const amount = inv.amount || 0;
+
+          if (status === 'PAID') {
+            acc.paidAmount += amount;
             acc.paidCount += 1;
-          } else if (inv.status === 'UNPAID') {
-            acc.unpaidAmount += inv.amount;
+          } else if (status === 'PARTIAL' || status === 'PARTIALLY_PAID') {
+            acc.partialAmount += amount;
+            acc.partialCount += 1;
+          } else if (status === 'UNPAID') {
+            acc.unpaidAmount += amount;
             acc.unpaidCount += 1;
-          } else if (inv.status === 'OVERDUE') {
-            acc.overdueAmount += inv.amount;
+          } else if (status === 'OVERDUE') {
+            acc.overdueAmount += amount;
             acc.overdueCount += 1;
           }
           return acc;
@@ -52,22 +76,13 @@ export const DashboardTab: React.FC = () => {
     fetchMetrics();
   }, []);
 
-  const totalInvoices = metrics.paidCount + metrics.unpaidCount + metrics.overdueCount;
+  const totalInvoices =
+    metrics.paidCount + metrics.partialCount + metrics.unpaidCount + metrics.overdueCount;
 
   return (
     <div className="space-y-6">
-      {/* HERO / WELCOME */}
-      <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">
-          Welcome Back, Brian Nyamai
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Here is your SaaS subscription revenue overview from Property Managers and Owners.
-        </p>
-      </div>
-
       {/* NUMERICAL METRICS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Paid Invoices */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
           <div className="flex justify-between items-center text-xs text-slate-400">
@@ -80,6 +95,22 @@ export const DashboardTab: React.FC = () => {
             </p>
             <p className="text-xs text-emerald-400 font-semibold mt-1">
               {metrics.paidCount} Subscriptions Paid
+            </p>
+          </div>
+        </div>
+
+        {/* Partial Invoices */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+          <div className="flex justify-between items-center text-xs text-slate-400">
+            <span>PARTIAL PAYMENTS</span>
+            <span className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg">🔄</span>
+          </div>
+          <div className="mt-3">
+            <p className="text-2xl font-extrabold text-white">
+              KES {loading ? '...' : metrics.partialAmount.toLocaleString()}
+            </p>
+            <p className="text-xs text-blue-400 font-semibold mt-1">
+              {metrics.partialCount} Partially Paid
             </p>
           </div>
         </div>
@@ -131,6 +162,12 @@ export const DashboardTab: React.FC = () => {
             ></div>
             <div
               style={{
+                width: `${totalInvoices > 0 ? (metrics.partialCount / totalInvoices) * 100 : 0}%`,
+              }}
+              className="bg-blue-500 transition-all"
+            ></div>
+            <div
+              style={{
                 width: `${totalInvoices > 0 ? (metrics.unpaidCount / totalInvoices) * 100 : 0}%`,
               }}
               className="bg-amber-500 transition-all"
@@ -143,10 +180,14 @@ export const DashboardTab: React.FC = () => {
             ></div>
           </div>
 
-          <div className="flex justify-between text-[11px] text-slate-400 pt-1 font-mono">
+          <div className="flex justify-between flex-wrap gap-2 text-[11px] text-slate-400 pt-1 font-mono">
             <span className="flex items-center space-x-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
               <span>Paid ({metrics.paidCount})</span>
+            </span>
+            <span className="flex items-center space-x-1">
+              <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+              <span>Partial ({metrics.partialCount})</span>
             </span>
             <span className="flex items-center space-x-1">
               <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>

@@ -7,7 +7,6 @@ export const AddUsersTab: React.FC = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState('property_manager');
-  const [designation, setDesignation] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -20,7 +19,7 @@ export const AddUsersTab: React.FC = () => {
       const res = await fetch('/api/admin/invite-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName, email, phone, role, designation }),
+        body: JSON.stringify({ fullName, email, phone, role }),
       });
 
       const result = await res.json();
@@ -34,9 +33,9 @@ export const AddUsersTab: React.FC = () => {
       setFullName('');
       setEmail('');
       setPhone('');
-      setDesignation('');
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'An error occurred while inviting the user.';
+      setMessage({ type: 'error', text: errorMsg });
     } finally {
       setLoading(false);
     }
@@ -124,17 +123,6 @@ export const AddUsersTab: React.FC = () => {
                 <option value="tenant">Tenant</option>
               </select>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Designation</label>
-            <input
-              type="text"
-              value={designation}
-              onChange={(e) => setDesignation(e.target.value)}
-              placeholder="e.g. Senior Regional Manager"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-            />
           </div>
 
           <button
