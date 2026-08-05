@@ -3,7 +3,9 @@ export type SuperAdminTab =
   | 'add-users'
   | 'unassigned-payments'
   | 'unassigned-tenant-payments'
-  | 'unassigned-saas-payments';
+  | 'unassigned-saas-payments'
+  | 'subscribers'
+  | 'generate-invoice';
 
 export interface InvoiceMetrics {
   paidAmount: number;
