@@ -182,20 +182,19 @@ export const SubscribersTab: React.FC = () => {
                 <th className="px-6 py-4">Role</th>
                 <th className="px-6 py-4">Linked Properties</th>
                 <th className="px-6 py-4">Payment Status</th>
-                <th className="px-6 py-4">Total Paid</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                <th className="px-6 py-4 text-center">Payment History</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
                     Loading subscriber records...
                   </td>
                 </tr>
               ) : filteredSubscribers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
                     No subscribers found matching your criteria.
                   </td>
                 </tr>
@@ -215,15 +214,12 @@ export const SubscribersTab: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4">{getStatusBadge(sub.payment_status)}</td>
-                    <td className="px-6 py-4 font-mono font-medium text-emerald-400">
-                      KES {sub.total_paid.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-center">
                       <button
                         onClick={() => openPaymentHistory(sub)}
                         className="bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
                       >
-                        Payment History
+                        View History
                       </button>
                     </td>
                   </tr>
