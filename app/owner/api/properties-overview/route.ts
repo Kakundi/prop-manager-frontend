@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
     }
 
-    // Query properties for the logged-in owner
+    // Query properties for the logged-in owner with associated units and invoices
     const { data: properties, error } = await supabase
       .from("properties")
       .select(`
@@ -83,8 +83,14 @@ export async function GET(request: NextRequest) {
           rent_amount,
           garbage_fee,
           parking_fee,
-          water_fee,
           is_occupied
+        ),
+        invoices (
+          id,
+          status,
+          amount_paid,
+          total_amount,
+          due_date
         )
       `)
       .eq("owner_id", user.id);
@@ -93,7 +99,61 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ properties: properties || [] });
+    const formattedProperties = (properties || []).map((prop: any) => {
+      const units = prop.units || [];
+      const invoices = prop.invoices || [];
+
+      const totalUnits = units.length;
+      const occupiedUnits = units.filter((u: any) => u.is_occupied).length;
+      const vacantUnits = totalUnits - occupiedUnits;
+
+      const financials = invoices.reduce(
+        (acc: any, inv: any) => {
+          const total = Number(inv.total_amount || 0);
+          const paid = Number(inv.amount_paid || 0);
+          const status = inv.status?.toLowerCase();
+
+          if (status === "paid") {
+            acc.paidInvoices += 1;
+            acc.totalPaidAmount += total;
+          } else if (status === "overdue") {
+            acc.overdueInvoices += 1;
+            acc.totalOverdueAmount += total - paid;
+          } else if (status === "partial") {
+            acc.partialPayments += 1;
+            acc.totalPartialAmount += paid;
+          } else {
+            acc.unpaidInvoices += 1;
+            acc.totalUnpaidAmount += total;
+          }
+
+          return acc;
+        },
+        {
+          paidInvoices: 0,
+          unpaidInvoices: 0,
+          overdueInvoices: 0,
+          partialPayments: 0,
+          totalPaidAmount: 0,
+          totalUnpaidAmount: 0,
+          totalOverdueAmount: 0,
+          totalPartialAmount: 0,
+        }
+      );
+
+      return {
+        propertyId: prop.id,
+        propertyName: prop.name,
+        location: prop.location,
+        totalUnits,
+        occupiedUnits,
+        vacantUnits,
+        units,
+        financials,
+      };
+    });
+
+    return NextResponse.json({ properties: formattedProperties });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
   }
@@ -115,7 +175,6 @@ export async function POST(request: NextRequest) {
       rentAmount,
       garbageFee,
       parkingFee,
-      waterFee,
     } = body;
 
     if (!propertyName || !unitNumber || !rentAmount) {
@@ -164,7 +223,6 @@ export async function POST(request: NextRequest) {
       rent_amount: Number(rentAmount),
       garbage_fee: garbageFee === null || garbageFee === undefined ? null : Number(garbageFee),
       parking_fee: parkingFee === null || parkingFee === undefined ? null : Number(parkingFee),
-      water_fee: waterFee === null || waterFee === undefined ? null : Number(waterFee),
       is_occupied: false,
     });
 
@@ -193,7 +251,6 @@ export async function PUT(request: NextRequest) {
       rentAmount,
       garbageFee,
       parkingFee,
-      waterFee,
     } = body;
 
     if (!unitId) {
@@ -219,7 +276,6 @@ export async function PUT(request: NextRequest) {
         rent_amount: Number(rentAmount),
         garbage_fee: garbageFee === null || garbageFee === undefined ? null : Number(garbageFee),
         parking_fee: parkingFee === null || parkingFee === undefined ? null : Number(parkingFee),
-        water_fee: waterFee === null || waterFee === undefined ? null : Number(waterFee),
       })
       .eq("id", unitId);
 

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createClient } from '@/lib/supabaseClient';
 import { 
   Building2, 
   Home, 
@@ -61,30 +62,59 @@ export const DashboardTab: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      
-      let res = await fetch('/owner/api/properties-overview', { cache: 'no-store' });
+
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      let res = await fetch('/owner/api/properties-overview', { 
+        cache: 'no-store',
+        headers 
+      });
+
       if (!res.ok) {
-        res = await fetch('/property-manager/api/properties-overview', { cache: 'no-store' });
+        res = await fetch('/property-manager/api/properties-overview', { 
+          cache: 'no-store',
+          headers 
+        });
       }
 
       if (!res.ok) {
-        throw new Error('Unable to connect to property records database. Showing placeholder structure.');
+        throw new Error('Unable to connect to property records database.');
       }
 
       const data = await res.json();
-      const loadedProps = data.properties || data || [];
+      const rawProperties = data.properties || data || [];
 
-      if (Array.isArray(loadedProps) && loadedProps.length > 0) {
-        setProperties(loadedProps);
+      if (Array.isArray(rawProperties) && rawProperties.length > 0) {
+        const formattedProperties: PropertyDashboardData[] = rawProperties.map((prop: any) => {
+          const unitsList = Array.isArray(prop.units) ? prop.units : [];
+          const totalUnits = prop.totalUnits ?? unitsList.length;
+          const occupiedUnits = prop.occupiedUnits ?? unitsList.filter((u: any) => u.is_occupied).length;
+          const vacantUnits = prop.vacantUnits ?? (totalUnits - occupiedUnits);
+
+          return {
+            propertyId: prop.id || prop.propertyId || 'N/A',
+            propertyName: prop.name || prop.propertyName || 'Unnamed Property',
+            totalUnits,
+            occupiedUnits,
+            vacantUnits,
+            financials: prop.financials || DEFAULT_PLACEHOLDER_PROPERTY.financials,
+          };
+        });
+
+        setProperties(formattedProperties);
       } else {
-        setProperties([DEFAULT_PLACEHOLDER_PROPERTY]);
+        setProperties([]);
       }
     } catch (err: unknown) {
       console.error('Error fetching dashboard metrics:', err);
       const message = err instanceof Error ? err.message : 'Database connection error.';
       setError(message);
-      // Fallback to placeholder data on connection error
-      setProperties([DEFAULT_PLACEHOLDER_PROPERTY]);
     } finally {
       setLoading(false);
     }
@@ -137,6 +167,17 @@ export const DashboardTab: React.FC = () => {
         </div>
       )}
 
+      {/* EMPTY STATE */}
+      {!error && properties.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center space-y-3">
+          <Building2 size={36} className="mx-auto text-gray-400" />
+          <h3 className="text-base font-bold text-gray-800">No Properties Found</h3>
+          <p className="text-xs text-gray-500 max-w-sm mx-auto">
+            You haven't added any properties yet. Switch to the <strong>Add Property</strong> tab to register your first property and units.
+          </p>
+        </div>
+      )}
+
       {/* RENDER PER-PROPERTY DASHBOARD SECTION */}
       {properties.map((property) => {
         const financials = property.financials || DEFAULT_PLACEHOLDER_PROPERTY.financials;
@@ -166,8 +207,8 @@ export const DashboardTab: React.FC = () => {
                   <Building2 size={22} />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-800">{property.propertyName || 'Unnamed Property'}</h3>
-                  <span className="text-xs text-gray-400">Database Record ID: {property.propertyId || 'N/A'}</span>
+                  <h3 className="text-lg font-bold text-gray-800">{property.propertyName}</h3>
+                  <span className="text-xs text-gray-400">Database Record ID: {property.propertyId}</span>
                 </div>
               </div>
 
@@ -223,7 +264,7 @@ export const DashboardTab: React.FC = () => {
                 </div>
                 <p className="text-xl font-bold text-green-900">{financials.paidInvoices ?? 0}</p>
                 <p className="text-xs text-green-700 mt-1 font-medium">
-                  ${(financials.totalPaidAmount ?? 0).toLocaleString()}
+                  KES {(financials.totalPaidAmount ?? 0).toLocaleString()}
                 </p>
               </div>
 
@@ -234,7 +275,7 @@ export const DashboardTab: React.FC = () => {
                 </div>
                 <p className="text-xl font-bold text-yellow-900">{financials.unpaidInvoices ?? 0}</p>
                 <p className="text-xs text-yellow-700 mt-1 font-medium">
-                  ${(financials.totalUnpaidAmount ?? 0).toLocaleString()}
+                  KES {(financials.totalUnpaidAmount ?? 0).toLocaleString()}
                 </p>
               </div>
 
@@ -245,7 +286,7 @@ export const DashboardTab: React.FC = () => {
                 </div>
                 <p className="text-xl font-bold text-red-900">{financials.overdueInvoices ?? 0}</p>
                 <p className="text-xs text-red-700 mt-1 font-medium">
-                  ${(financials.totalOverdueAmount ?? 0).toLocaleString()}
+                  KES {(financials.totalOverdueAmount ?? 0).toLocaleString()}
                 </p>
               </div>
 
@@ -256,7 +297,7 @@ export const DashboardTab: React.FC = () => {
                 </div>
                 <p className="text-xl font-bold text-blue-900">{financials.partialPayments ?? 0}</p>
                 <p className="text-xs text-blue-700 mt-1 font-medium">
-                  ${(financials.totalPartialAmount ?? 0).toLocaleString()}
+                  KES {(financials.totalPartialAmount ?? 0).toLocaleString()}
                 </p>
               </div>
             </div>
