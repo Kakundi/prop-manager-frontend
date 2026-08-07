@@ -8,9 +8,9 @@ interface Unit {
   property_id: string;
   unit_number: string;
   rent_amount: number;
-  garbage_fee: number;
-  parking_fee: number;
-  water_fee: number;
+  garbage_fee: number | null;
+  parking_fee: number | null;
+  water_fee: number | null;
   is_occupied: boolean;
 }
 
@@ -18,7 +18,6 @@ interface Property {
   id: string;
   name: string;
   location: string;
-  water_rate_per_unit: number;
   units: Unit[];
 }
 
@@ -30,13 +29,19 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
   // Form state
   const [propertyName, setPropertyName] = useState("");
   const [location, setLocation] = useState("");
-  const [waterRate, setWaterRate] = useState<number | "">("");
 
   const [unitNumber, setUnitNumber] = useState("");
   const [rentAmount, setRentAmount] = useState<number | "">("");
+
+  // Fees state
   const [garbageFee, setGarbageFee] = useState<number | "">(0);
+  const [isGarbageNA, setIsGarbageNA] = useState(false);
+
   const [parkingFee, setParkingFee] = useState<number | "">(0);
+  const [isParkingNA, setIsParkingNA] = useState(false);
+
   const [waterFee, setWaterFee] = useState<number | "">(0);
+  const [isWaterNA, setIsWaterNA] = useState(false);
 
   // Status states
   const [submitting, setSubmitting] = useState(false);
@@ -94,12 +99,11 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
       const payload = {
         propertyName: propertyName.trim(),
         location: location.trim(),
-        waterRate: Number(waterRate) || 0,
         unitNumber: unitNumber.trim(),
         rentAmount: Number(rentAmount) || 0,
-        garbageFee: Number(garbageFee) || 0,
-        parkingFee: Number(parkingFee) || 0,
-        waterFee: Number(waterFee) || 0,
+        garbageFee: isGarbageNA ? null : Number(garbageFee) || 0,
+        parkingFee: isParkingNA ? null : Number(parkingFee) || 0,
+        waterFee: isWaterNA ? null : Number(waterFee) || 0,
       };
 
       const supabase = createClient();
@@ -126,9 +130,14 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
       setFormSuccess(`Successfully saved ${payload.propertyName} - Unit ${payload.unitNumber}`);
       setUnitNumber("");
       setRentAmount("");
+
+      // Reset fees
       setGarbageFee(0);
+      setIsGarbageNA(false);
       setParkingFee(0);
+      setIsParkingNA(false);
       setWaterFee(0);
+      setIsWaterNA(false);
 
       fetchProperties();
     } catch (err: any) {
@@ -153,7 +162,7 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
 
         <div className="space-y-4">
           <h2 className="text-lg font-semibold border-b pb-2">1. Property Information</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Property Name *</label>
               <input
@@ -175,16 +184,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                 onChange={(e) => setLocation(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Water Rate / Unit (KES)</label>
-              <input
-                type="number"
-                className="w-full border rounded p-2 mt-1"
-                placeholder="0"
-                value={waterRate}
-                onChange={(e) => setWaterRate(e.target.value ? Number(e.target.value) : "")}
-              />
-            </div>
           </div>
         </div>
 
@@ -202,6 +201,7 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                 onChange={(e) => setUnitNumber(e.target.value)}
               />
             </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700">Rent Per Unit (KES) *</label>
               <input
@@ -212,30 +212,81 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                 onChange={(e) => setRentAmount(e.target.value ? Number(e.target.value) : "")}
               />
             </div>
+
+            {/* Garbage Fee */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Garbage Fee</label>
+              <div className="flex justify-between items-center">
+                <label className="block text-sm font-medium text-gray-700">Garbage Fee</label>
+                <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isGarbageNA}
+                    onChange={(e) => {
+                      setIsGarbageNA(e.target.checked);
+                      if (e.target.checked) setGarbageFee("");
+                    }}
+                  />
+                  N/A
+                </label>
+              </div>
               <input
                 type="number"
-                className="w-full border rounded p-2 mt-1"
-                value={garbageFee}
+                disabled={isGarbageNA}
+                placeholder={isGarbageNA ? "N/A" : "0"}
+                className="w-full border rounded p-2 mt-1 disabled:bg-gray-100 disabled:text-gray-400"
+                value={isGarbageNA ? "" : garbageFee}
                 onChange={(e) => setGarbageFee(e.target.value ? Number(e.target.value) : 0)}
               />
             </div>
+
+            {/* Parking Fee */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Parking Fee</label>
+              <div className="flex justify-between items-center">
+                <label className="block text-sm font-medium text-gray-700">Parking Fee</label>
+                <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isParkingNA}
+                    onChange={(e) => {
+                      setIsParkingNA(e.target.checked);
+                      if (e.target.checked) setParkingFee("");
+                    }}
+                  />
+                  N/A
+                </label>
+              </div>
               <input
                 type="number"
-                className="w-full border rounded p-2 mt-1"
-                value={parkingFee}
+                disabled={isParkingNA}
+                placeholder={isParkingNA ? "N/A" : "0"}
+                className="w-full border rounded p-2 mt-1 disabled:bg-gray-100 disabled:text-gray-400"
+                value={isParkingNA ? "" : parkingFee}
                 onChange={(e) => setParkingFee(e.target.value ? Number(e.target.value) : 0)}
               />
             </div>
+
+            {/* Water Fee / Meter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Water Fee</label>
+              <div className="flex justify-between items-center">
+                <label className="block text-sm font-medium text-gray-700">Water Fee / Meter</label>
+                <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isWaterNA}
+                    onChange={(e) => {
+                      setIsWaterNA(e.target.checked);
+                      if (e.target.checked) setWaterFee("");
+                    }}
+                  />
+                  N/A
+                </label>
+              </div>
               <input
                 type="number"
-                className="w-full border rounded p-2 mt-1"
-                value={waterFee}
+                disabled={isWaterNA}
+                placeholder={isWaterNA ? "N/A" : "0"}
+                className="w-full border rounded p-2 mt-1 disabled:bg-gray-100 disabled:text-gray-400"
+                value={isWaterNA ? "" : waterFee}
                 onChange={(e) => setWaterFee(e.target.value ? Number(e.target.value) : 0)}
               />
             </div>
@@ -311,7 +362,7 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                           <th className="p-3">Rent (KES)</th>
                           <th className="p-3">Garbage</th>
                           <th className="p-3">Parking</th>
-                          <th className="p-3">Water</th>
+                          <th className="p-3">Water Fee / Meter</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -330,9 +381,15 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                               </span>
                             </td>
                             <td className="p-3">KES {unit.rent_amount?.toLocaleString()}</td>
-                            <td className="p-3">KES {unit.garbage_fee?.toLocaleString()}</td>
-                            <td className="p-3">KES {unit.parking_fee?.toLocaleString()}</td>
-                            <td className="p-3">KES {unit.water_fee?.toLocaleString()}</td>
+                            <td className="p-3">
+                              {unit.garbage_fee === null ? "N/A" : `KES ${unit.garbage_fee?.toLocaleString()}`}
+                            </td>
+                            <td className="p-3">
+                              {unit.parking_fee === null ? "N/A" : `KES ${unit.parking_fee?.toLocaleString()}`}
+                            </td>
+                            <td className="p-3">
+                              {unit.water_fee === null ? "N/A" : `KES ${unit.water_fee?.toLocaleString()}`}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
