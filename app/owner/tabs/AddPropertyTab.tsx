@@ -21,11 +21,7 @@ interface PropertyGroup {
   units: PropertyUnit[];
 }
 
-interface AddPropertyTabProps {
-  currentUserId: string;
-}
-
-export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
+export function AddPropertyTab({ currentUserId }: { currentUserId?: string }) {
   // Property Inputs
   const [propertyName, setPropertyName] = useState('');
   const [location, setLocation] = useState('');
@@ -39,7 +35,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
   // Optional Fees
   const [garbageFee, setGarbageFee] = useState('');
   const [isGarbageNA, setIsGarbageNA] = useState(false);
-
   const [parkingFee, setParkingFee] = useState('');
   const [isParkingNA, setIsParkingNA] = useState(false);
 
@@ -55,7 +50,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
   const fetchPropertiesAndUnits = useCallback(async () => {
     setFetchingList(true);
     try {
-      // 1. Fetch user's properties along with their nested units
       const { data: propertiesData, error } = await supabase
         .from('properties')
         .select(`
@@ -108,7 +102,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
     setMessage({ type: '', text: '' });
 
     try {
-      // Get current authenticated user ID
       const { data: { user } } = await supabase.auth.getUser();
       const ownerId = user?.id || currentUserId;
 
@@ -119,7 +112,7 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
       const cleanPropName = propertyName.trim();
       const waterRate = isWaterNA || !waterRatePerUnit ? 0.0 : parseFloat(waterRatePerUnit);
 
-      // Step A: Check if Property already exists for this owner
+      // 1. Check if Property exists for this owner
       let propertyId: string;
 
       const { data: existingProp, error: fetchPropErr } = await supabase
@@ -150,7 +143,7 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
         propertyId = newProp.id;
       }
 
-      // Step B: Insert the Unit linked to the Property
+      // 2. Insert Unit linked to Property
       const { error: unitErr } = await supabase
         .from('units')
         .insert({
@@ -167,19 +160,12 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
 
       setMessage({ type: 'success', text: 'Property and Unit saved successfully!' });
 
-      // Reset form
-      setPropertyName('');
-      setLocation('');
-      setWaterRatePerUnit('');
+      // Reset unit fields
       setUnitNumber('');
       setRentAmount('');
       setGarbageFee('');
       setParkingFee('');
-      setIsWaterNA(false);
-      setIsGarbageNA(false);
-      setIsParkingNA(false);
 
-      // Refresh list
       fetchPropertiesAndUnits();
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Failed to save property.' });
@@ -280,7 +266,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Garbage Fee */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-sm font-medium text-gray-700">Garbage Fee</label>
@@ -307,7 +292,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                 />
               </div>
 
-              {/* Parking Fee */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-sm font-medium text-gray-700">Parking Fee</label>
@@ -334,7 +318,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                 />
               </div>
 
-              {/* Water Rate */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-sm font-medium text-gray-700">Water Rate / Unit</label>
@@ -404,7 +387,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
 
               return (
                 <div key={prop.id} className="border rounded-md overflow-hidden bg-white">
-                  {/* Property Sub-header */}
                   <div className="bg-gray-50 px-4 py-3 border-b flex flex-wrap justify-between items-center gap-2">
                     <div>
                       <h3 className="text-base font-semibold text-gray-900">{prop.name}</h3>
@@ -424,7 +406,6 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                     </div>
                   </div>
 
-                  {/* Units Table */}
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm text-gray-600">
                       <thead className="bg-white text-gray-500 text-xs uppercase font-medium border-b">
