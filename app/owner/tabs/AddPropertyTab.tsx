@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@/lib/supabaseClient';
 
 interface PropertyUnit {
   id: string;
@@ -48,51 +49,54 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [propertiesList, setPropertiesList] = useState<PropertyGroup[]>([]);
 
-  // Fetch properties and their associated units
+  const supabase = createClient();
+
+  // Fetch properties and their associated units directly from Supabase
   const fetchPropertiesAndUnits = useCallback(async () => {
     setFetchingList(true);
     try {
-      const res = await fetch('/owner/api/add');
-      const data = await res.json();
-      if (res.ok && data.units) {
-        // Transform backend response: group flat units under their unique properties
-        const map = new Map<string, PropertyGroup>();
+      // 1. Fetch user's properties along with their nested units
+      const { data: propertiesData, error } = await supabase
+        .from('properties')
+        .select(`
+          id,
+          name,
+          location,
+          water_rate_per_unit,
+          units (
+            id,
+            unit_number,
+            rent_amount,
+            garbage_fee,
+            parking_fee,
+            water_fee,
+            is_occupied
+          )
+        `)
+        .order('created_at', { ascending: false });
 
-        data.units.forEach((item: any) => {
-          const propId = item.properties?.id || 'unassigned';
-          const propName = item.properties?.name || 'Unnamed Property';
-          const propLoc = item.properties?.location || null;
-          const propWaterRate = item.properties?.water_rate_per_unit || 0;
+      if (error) {
+        console.error('Error fetching properties:', error.message);
+        return;
+      }
 
-          if (!map.has(propId)) {
-            map.set(propId, {
-              id: propId,
-              name: propName,
-              location: propLoc,
-              water_rate_per_unit: propWaterRate,
-              units: [],
-            });
-          }
+      if (propertiesData) {
+        const formattedGroups: PropertyGroup[] = propertiesData.map((prop: any) => ({
+          id: prop.id,
+          name: prop.name,
+          location: prop.location,
+          water_rate_per_unit: prop.water_rate_per_unit || 0,
+          units: prop.units || [],
+        }));
 
-          map.get(propId)?.units.push({
-            id: item.id,
-            unit_number: item.unit_number,
-            rent_amount: item.rent_amount,
-            garbage_fee: item.garbage_fee,
-            parking_fee: item.parking_fee,
-            water_fee: item.water_fee,
-            is_occupied: item.is_occupied ?? false, // expects boolean flag from db join if available
-          });
-        });
-
-        setPropertiesList(Array.from(map.values()));
+        setPropertiesList(formattedGroups);
       }
     } catch (err) {
       console.error('Error fetching property registry:', err);
     } finally {
       setFetchingList(false);
     }
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     fetchPropertiesAndUnits();
@@ -103,37 +107,67 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
     setLoading(true);
     setMessage({ type: '', text: '' });
 
-    const payload = {
-      property: {
-        name: propertyName.trim(),
-        location: location.trim() || null,
-        water_rate_per_unit: isWaterNA || !waterRatePerUnit ? 0.0 : parseFloat(waterRatePerUnit),
-      },
-      unit: {
-        unit_number: unitNumber.trim(),
-        rent_amount: parseFloat(rentAmount) || 0.0,
-        garbage_fee: isGarbageNA || !garbageFee ? 0.0 : parseFloat(garbageFee),
-        parking_fee: isParkingNA || !parkingFee ? 0.0 : parseFloat(parkingFee),
-        water_fee: isWaterNA || !waterRatePerUnit ? 0.0 : parseFloat(waterRatePerUnit),
-      },
-    };
-
     try {
-      const response = await fetch('/owner/api/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      // Get current authenticated user ID
+      const { data: { user } } = await supabase.auth.getUser();
+      const ownerId = user?.id || currentUserId;
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to register unit.');
+      if (!ownerId) {
+        throw new Error('User session not found. Please log in again.');
       }
+
+      const cleanPropName = propertyName.trim();
+      const waterRate = isWaterNA || !waterRatePerUnit ? 0.0 : parseFloat(waterRatePerUnit);
+
+      // Step A: Check if Property already exists for this owner
+      let propertyId: string;
+
+      const { data: existingProp, error: fetchPropErr } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('owner_id', ownerId)
+        .ilike('name', cleanPropName)
+        .maybeSingle();
+
+      if (fetchPropErr) throw fetchPropErr;
+
+      if (existingProp) {
+        propertyId = existingProp.id;
+      } else {
+        // Create new property
+        const { data: newProp, error: createPropErr } = await supabase
+          .from('properties')
+          .insert({
+            owner_id: ownerId,
+            name: cleanPropName,
+            location: location.trim() || null,
+            water_rate_per_unit: waterRate,
+          })
+          .select('id')
+          .single();
+
+        if (createPropErr) throw createPropErr;
+        propertyId = newProp.id;
+      }
+
+      // Step B: Insert the Unit linked to the Property
+      const { error: unitErr } = await supabase
+        .from('units')
+        .insert({
+          property_id: propertyId,
+          unit_number: unitNumber.trim(),
+          rent_amount: parseFloat(rentAmount) || 0.0,
+          garbage_fee: isGarbageNA || !garbageFee ? 0.0 : parseFloat(garbageFee),
+          parking_fee: isParkingNA || !parkingFee ? 0.0 : parseFloat(parkingFee),
+          water_fee: waterRate,
+          is_occupied: false,
+        });
+
+      if (unitErr) throw unitErr;
 
       setMessage({ type: 'success', text: 'Property and Unit saved successfully!' });
 
-      // Reset form input fields
+      // Reset form
       setPropertyName('');
       setLocation('');
       setWaterRatePerUnit('');
@@ -145,10 +179,10 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
       setIsGarbageNA(false);
       setIsParkingNA(false);
 
-      // Re-fetch listing
+      // Refresh list
       fetchPropertiesAndUnits();
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      setMessage({ type: 'error', text: err.message || 'Failed to save property.' });
     } finally {
       setLoading(false);
     }
