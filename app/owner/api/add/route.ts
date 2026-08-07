@@ -2,136 +2,142 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-// GET Handler: Fetches all units & linked properties for the logged-in owner
-export async function GET() {
-  try {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-        },
-      }
-    );
-
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Unauthorized session' }, { status: 401 });
-    }
-
-    // Query units and join the parent property details
-    const { data: units, error } = await supabase
-      .from('units')
-      .select(`
-        id,
-        unit_number,
-        rent_amount,
-        garbage_fee,
-        parking_fee,
-        water_fee,
-        properties!inner (
-          id,
-          name,
-          location,
-          water_rate_per_unit,
-          owner_id
-        )
-      `)
-      .eq('properties.owner_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ units }, { status: 200 });
-
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
-}
-
-// POST Handler: Inserts/Reuses property and creates the unit
 export async function POST(req: Request) {
-  try {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
+  const cookieStore = await cookies();
+
+  // Create an authenticated Supabase server client bound to request cookies
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
         },
-      }
-    );
-
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'Unauthorized user session.' }, { status: 401 });
+      },
     }
+  );
 
-    const { property, unit } = await req.json();
+  // Retrieve authenticated user from session
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
+  if (authError || !user) {
+    return NextResponse.json(
+      { error: 'Unauthorized user session.' },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const body = await req.json();
+    const { property, unit } = body;
+
+    // 1. Check if property already exists for this owner
     let propertyId: string;
 
-    // Check if property with this name already exists for this owner
     const { data: existingProp } = await supabase
       .from('properties')
       .select('id')
-      .eq('name', property.name)
       .eq('owner_id', user.id)
-      .maybeSingle();
+      .ilike('name', property.name.trim())
+      .single();
 
     if (existingProp) {
       propertyId = existingProp.id;
     } else {
-      // Create new property record
-      const { data: newProp, error: propErr } = await supabase
+      // Create new property
+      const { data: newProp, error: propError } = await supabase
         .from('properties')
         .insert({
-          name: property.name,
-          location: property.location,
           owner_id: user.id,
+          name: property.name.trim(),
+          location: property.location,
           water_rate_per_unit: property.water_rate_per_unit,
         })
-        .select('id')
+        .select()
         .single();
 
-      if (propErr) {
-        return NextResponse.json({ error: `Property Error: ${propErr.message}` }, { status: 400 });
-      }
+      if (propError) throw propError;
       propertyId = newProp.id;
     }
 
-    // Insert unit record linked via property_id
-    const { data: newUnit, error: unitErr } = await supabase
+    // 2. Insert Unit linked to Property
+    const { data: newUnit, error: unitError } = await supabase
       .from('units')
       .insert({
         property_id: propertyId,
-        unit_number: unit.unit_number,
+        unit_number: unit.unit_number.trim(),
         rent_amount: unit.rent_amount,
         garbage_fee: unit.garbage_fee,
         parking_fee: unit.parking_fee,
         water_fee: unit.water_fee,
+        is_occupied: false,
       })
       .select()
       .single();
 
-    if (unitErr) {
-      return NextResponse.json({ error: `Unit Error: ${unitErr.message}` }, { status: 400 });
-    }
+    if (unitError) throw unitError;
 
-    return NextResponse.json({ success: true, unit: newUnit }, { status: 200 });
-
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ success: true, unit: newUnit });
+  } catch (error: any) {
+    console.error('Error in /owner/api/add:', error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+export async function GET() {
+  const cookieStore = await cookies();
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+      },
+    }
+  );
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return NextResponse.json(
+      { error: 'Unauthorized user session.' },
+      { status: 401 }
+    );
+  }
+
+  const { data: units, error } = await supabase
+    .from('units')
+    .select(`
+      id,
+      unit_number,
+      rent_amount,
+      garbage_fee,
+      parking_fee,
+      water_fee,
+      is_occupied,
+      properties!inner (
+        id,
+        name,
+        location,
+        water_rate_per_unit,
+        owner_id
+      )
+    `)
+    .eq('properties.owner_id', user.id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ units });
 }
