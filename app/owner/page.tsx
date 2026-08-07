@@ -5,7 +5,7 @@ import { OwnerTab } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardTab } from './tabs/DashboardTab';
-import { AddPropertyTab } from './tabs/AddPropertyTab';
+import AddPropertyTab from './tabs/AddPropertyTab';
 import { UserManagementTab } from './tabs/UserManagementTab';
 import { TenantsTab } from './tabs/TenantsTab';
 import { UnassignedPaymentsTab } from './tabs/UnassignedPaymentsTab';
@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabaseClient';
 export default function OwnerPage() {
   const [activeTab, setActiveTab] = useState<OwnerTab>('dashboard');
   const [ownerFullName, setOwnerFullName] = useState<string>('Property Owner');
+  const [currentUserId, setCurrentUserId] = useState<string>('');
 
   useEffect(() => {
     let isMounted = true;
@@ -28,6 +29,10 @@ export default function OwnerPage() {
         } = await supabase.auth.getUser();
 
         if (userError || !user) return;
+
+        if (isMounted) {
+          setCurrentUserId(user.id);
+        }
 
         const { data, error: profileError } = await supabase
           .from('profiles')
@@ -60,7 +65,7 @@ export default function OwnerPage() {
       case 'dashboard':
         return <DashboardTab />;
       case 'add-property':
-        return <AddPropertyTab />;
+        return <AddPropertyTab currentUserId={currentUserId} />;
       case 'users':
         return <UserManagementTab />;
       case 'tenants':
