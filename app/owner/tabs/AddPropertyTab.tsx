@@ -22,13 +22,17 @@ interface Property {
   units: Unit[];
 }
 
-export default function AddPropertyTab() {
+interface AddPropertyTabProps {
+  currentUserId?: string;
+}
+
+export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  // Form inputs
+  // Form state
   const [propertyName, setPropertyName] = useState("");
   const [location, setLocation] = useState("");
   const [waterRate, setWaterRate] = useState<number | "">("");
@@ -39,23 +43,22 @@ export default function AddPropertyTab() {
   const [parkingFee, setParkingFee] = useState<number | "">(0);
   const [waterFee, setWaterFee] = useState<number | "">(0);
 
-  // Form submission states
+  // Submission state
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
-  // List states
+  // Overview state
   const [properties, setProperties] = useState<Property[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
-  // Modal edit states
+  // Edit modals state
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Load properties overview
   const fetchOverview = async () => {
     try {
       setListLoading(true);
@@ -81,7 +84,6 @@ export default function AddPropertyTab() {
     fetchOverview();
   }, []);
 
-  // Save New Property and Unit
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -89,8 +91,12 @@ export default function AddPropertyTab() {
     setFormSuccess(null);
 
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error("User session invalid.");
+      let userId = currentUserId;
+      if (!userId) {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) throw new Error("User session invalid.");
+        userId = user.id;
+      }
 
       const cleanPropName = propertyName.trim();
       let propertyId: string;
@@ -99,7 +105,7 @@ export default function AddPropertyTab() {
         .from("properties")
         .select("id")
         .ilike("name", cleanPropName)
-        .eq("owner_id", user.id);
+        .eq("owner_id", userId);
 
       if (checkError) throw checkError;
 
@@ -112,7 +118,7 @@ export default function AddPropertyTab() {
             name: cleanPropName,
             location: location.trim(),
             water_rate_per_unit: Number(waterRate) || 0,
-            owner_id: user.id,
+            owner_id: userId,
           })
           .select("id")
           .single();
@@ -121,17 +127,15 @@ export default function AddPropertyTab() {
         propertyId = newProp.id;
       }
 
-      const { error: unitError } = await supabase
-        .from("units")
-        .insert({
-          property_id: propertyId,
-          unit_number: unitNumber.trim(),
-          rent_amount: Number(rentAmount) || 0,
-          garbage_fee: Number(garbageFee) || 0,
-          parking_fee: Number(parkingFee) || 0,
-          water_fee: Number(waterFee) || 0,
-          is_occupied: false,
-        });
+      const { error: unitError } = await supabase.from("units").insert({
+        property_id: propertyId,
+        unit_number: unitNumber.trim(),
+        rent_amount: Number(rentAmount) || 0,
+        garbage_fee: Number(garbageFee) || 0,
+        parking_fee: Number(parkingFee) || 0,
+        water_fee: Number(waterFee) || 0,
+        is_occupied: false,
+      });
 
       if (unitError) throw unitError;
 
@@ -150,7 +154,6 @@ export default function AddPropertyTab() {
     }
   };
 
-  // Update Property Handler
   const handleUpdateProperty = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingProperty) return;
@@ -177,7 +180,6 @@ export default function AddPropertyTab() {
     }
   };
 
-  // Update Unit Handler
   const handleUpdateUnit = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingUnit) return;
@@ -216,7 +218,7 @@ export default function AddPropertyTab() {
         </p>
       </div>
 
-      {/* ADD PROPERTY FORM */}
+      {/* FORM SECTION */}
       <form onSubmit={handleSubmit} className="border p-6 rounded-lg bg-white shadow-sm space-y-6">
         {formError && <div className="p-3 bg-red-100 text-red-700 rounded">{formError}</div>}
         {formSuccess && <div className="p-3 bg-green-100 text-green-700 rounded">{formSuccess}</div>}
@@ -262,7 +264,7 @@ export default function AddPropertyTab() {
           <h2 className="text-lg font-semibold border-b pb-2">2. Unit Details & Fees</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium">Unit Name / Number (Text) *</label>
+              <label className="block text-sm font-medium">Unit Name / Number *</label>
               <input
                 type="text"
                 required
@@ -287,7 +289,6 @@ export default function AddPropertyTab() {
               <input
                 type="number"
                 className="w-full border rounded p-2 mt-1"
-                placeholder="N/A"
                 value={garbageFee}
                 onChange={(e) => setGarbageFee(e.target.value ? Number(e.target.value) : 0)}
               />
@@ -297,7 +298,6 @@ export default function AddPropertyTab() {
               <input
                 type="number"
                 className="w-full border rounded p-2 mt-1"
-                placeholder="N/A"
                 value={parkingFee}
                 onChange={(e) => setParkingFee(e.target.value ? Number(e.target.value) : 0)}
               />
@@ -307,7 +307,6 @@ export default function AddPropertyTab() {
               <input
                 type="number"
                 className="w-full border rounded p-2 mt-1"
-                placeholder="N/A"
                 value={waterFee}
                 onChange={(e) => setWaterFee(e.target.value ? Number(e.target.value) : 0)}
               />
@@ -324,8 +323,8 @@ export default function AddPropertyTab() {
         </button>
       </form>
 
-      {/* REGISTERED PROPERTIES INVENTORY LIST */}
-      <div className="border p-6 rounded-lg bg-white shadow-sm space-y-4">
+      {/* OVERVIEW INVENTORY */}
+      <div className="border rounded-lg bg-white shadow-sm space-y-4 p-6">
         <div className="flex justify-between items-center border-b pb-3">
           <div>
             <h2 className="text-xl font-bold">Registered Properties & Units</h2>
@@ -353,31 +352,35 @@ export default function AddPropertyTab() {
               const vacantCount = totalUnits - occupiedCount;
 
               return (
-                <div key={prop.id} className="border rounded-lg p-5 bg-gray-50 space-y-4">
-                  {/* PROPERTY HEADER + EDIT PROPERTY BUTTON */}
-                  <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2 border-b pb-3">
+                <div key={prop.id} className="border rounded-lg overflow-hidden bg-white">
+                  {/* HEADER BLOCK WITH EDIT PROPERTY BUTTON */}
+                  <div className="bg-gray-50 px-4 py-3 border-b flex flex-wrap justify-between items-center gap-2">
                     <div>
-                      <h3 className="font-bold text-xl text-gray-800">{prop.name}</h3>
-                      <p className="text-sm text-gray-600">{prop.location}</p>
+                      <h3 className="text-base font-semibold text-gray-900">{prop.name}</h3>
+                      <p className="text-xs text-gray-500">{prop.location}</p>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-xs space-x-2 text-gray-600">
-                        <span>Total Units: <strong>{totalUnits}</strong></span> |
-                        <span>Occupied: <strong>{occupiedCount}</strong></span> |
-                        <span>Vacant: <strong>{vacantCount}</strong></span>
-                      </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-medium">
+                        Total Units: {totalUnits}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-green-50 text-green-700 font-medium">
+                        Occupied: {occupiedCount}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-medium">
+                        Vacant: {vacantCount}
+                      </span>
                       <button
                         onClick={() => setEditingProperty(prop)}
-                        className="text-xs bg-gray-800 text-white hover:bg-black px-3 py-1.5 rounded font-medium"
+                        className="ml-2 px-3 py-1 bg-gray-900 text-white rounded hover:bg-black font-medium text-xs"
                       >
                         Edit Property
                       </button>
                     </div>
                   </div>
 
-                  {/* UNITS TABLE + ACTIONS COLUMN + EDIT UNIT BUTTON */}
+                  {/* UNITS TABLE WITH EDIT UNIT BUTTON */}
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse bg-white rounded shadow-sm">
+                    <table className="w-full text-left text-sm border-collapse">
                       <thead>
                         <tr className="bg-gray-100 border-b text-gray-700">
                           <th className="p-3">Unit Number</th>
