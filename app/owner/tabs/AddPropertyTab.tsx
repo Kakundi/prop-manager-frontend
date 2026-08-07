@@ -22,7 +22,7 @@ interface Property {
   units: Unit[];
 }
 
-export default function AddPropertyPage() {
+export default function AddPropertyTab() {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -39,7 +39,7 @@ export default function AddPropertyPage() {
   const [parkingFee, setParkingFee] = useState<number | "">(0);
   const [waterFee, setWaterFee] = useState<number | "">(0);
 
-  // Form states
+  // Form submission states
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
@@ -55,7 +55,7 @@ export default function AddPropertyPage() {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Load properties list
+  // Load properties overview
   const fetchOverview = async () => {
     try {
       setListLoading(true);
@@ -208,7 +208,7 @@ export default function AddPropertyPage() {
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-8">
+    <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold">Add New Property & Units</h1>
         <p className="text-gray-600">
@@ -216,7 +216,7 @@ export default function AddPropertyPage() {
         </p>
       </div>
 
-      {/* FORM SECTION */}
+      {/* ADD PROPERTY FORM */}
       <form onSubmit={handleSubmit} className="border p-6 rounded-lg bg-white shadow-sm space-y-6">
         {formError && <div className="p-3 bg-red-100 text-red-700 rounded">{formError}</div>}
         {formSuccess && <div className="p-3 bg-green-100 text-green-700 rounded">{formSuccess}</div>}
@@ -303,7 +303,7 @@ export default function AddPropertyPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium">Water Rate / Unit</label>
+              <label className="block text-sm font-medium">Water Fee</label>
               <input
                 type="number"
                 className="w-full border rounded p-2 mt-1"
@@ -318,13 +318,13 @@ export default function AddPropertyPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+          className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 font-medium"
         >
           {submitting ? "Saving..." : "Save Property"}
         </button>
       </form>
 
-      {/* REGISTERED PROPERTIES & UNITS INVENTORY TABLE */}
+      {/* REGISTERED PROPERTIES INVENTORY LIST */}
       <div className="border p-6 rounded-lg bg-white shadow-sm space-y-4">
         <div className="flex justify-between items-center border-b pb-3">
           <div>
@@ -354,7 +354,7 @@ export default function AddPropertyPage() {
 
               return (
                 <div key={prop.id} className="border rounded-lg p-5 bg-gray-50 space-y-4">
-                  {/* PROPERTY HEADER & EDIT BUTTON */}
+                  {/* PROPERTY HEADER + EDIT PROPERTY BUTTON */}
                   <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2 border-b pb-3">
                     <div>
                       <h3 className="font-bold text-xl text-gray-800">{prop.name}</h3>
@@ -375,7 +375,7 @@ export default function AddPropertyPage() {
                     </div>
                   </div>
 
-                  {/* UNITS TABLE WITH ACTIONS COLUMN */}
+                  {/* UNITS TABLE + ACTIONS COLUMN + EDIT UNIT BUTTON */}
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm border-collapse bg-white rounded shadow-sm">
                       <thead>
@@ -428,7 +428,7 @@ export default function AddPropertyPage() {
         )}
       </div>
 
-      {/* MODAL: EDIT PROPERTY */}
+      {/* EDIT PROPERTY MODAL */}
       {editingProperty && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full space-y-4">
@@ -479,7 +479,7 @@ export default function AddPropertyPage() {
         </div>
       )}
 
-      {/* MODAL: EDIT UNIT */}
+      {/* EDIT UNIT MODAL */}
       {editingUnit && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-lg w-full space-y-4">
