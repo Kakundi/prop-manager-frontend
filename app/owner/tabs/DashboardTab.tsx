@@ -71,24 +71,18 @@ export const DashboardTab: React.FC = () => {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
 
-      let res = await fetch('/owner/api/properties-overview', { 
+      const res = await fetch('/owner/api/properties-overview', { 
         cache: 'no-store',
         headers 
       });
 
-      if (!res.ok) {
-        res = await fetch('/property-manager/api/properties-overview', { 
-          cache: 'no-store',
-          headers 
-        });
-      }
-
-      if (!res.ok) {
-        throw new Error('Unable to connect to property records database.');
-      }
-
       const data = await res.json();
-      const rawProperties = data.properties || data || [];
+
+      if (!res.ok) {
+        throw new Error(data.error || `Server responded with error status ${res.status}`);
+      }
+
+      const rawProperties = data.properties || [];
 
       if (Array.isArray(rawProperties) && rawProperties.length > 0) {
         const formattedProperties: PropertyDashboardData[] = rawProperties.map((prop: any) => {
@@ -98,8 +92,8 @@ export const DashboardTab: React.FC = () => {
           const vacantUnits = prop.vacantUnits ?? (totalUnits - occupiedUnits);
 
           return {
-            propertyId: prop.id || prop.propertyId || 'N/A',
-            propertyName: prop.name || prop.propertyName || 'Unnamed Property',
+            propertyId: prop.propertyId || prop.id || 'N/A',
+            propertyName: prop.propertyName || prop.name || 'Unnamed Property',
             totalUnits,
             occupiedUnits,
             vacantUnits,

@@ -68,8 +68,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
     }
 
-    // Query properties for the logged-in owner with associated units and invoices
-    const { data: properties, error } = await supabase
+    // 1. Query properties and units
+    const { data: properties, error: propErr } = await supabase
       .from("properties")
       .select(`
         id,
@@ -84,30 +84,46 @@ export async function GET(request: NextRequest) {
           garbage_fee,
           parking_fee,
           is_occupied
-        ),
-        invoices (
-          id,
-          status,
-          amount_paid,
-          total_amount,
-          due_date
         )
       `)
       .eq("owner_id", user.id);
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (propErr) {
+      console.error("Properties query error:", propErr);
+      return NextResponse.json({ error: propErr.message }, { status: 500 });
     }
 
-    const formattedProperties = (properties || []).map((prop: any) => {
+    if (!properties || properties.length === 0) {
+      return NextResponse.json({ properties: [] });
+    }
+
+    // 2. Safely fetch invoices in a separate query to prevent join/schema errors
+    const propertyIds = properties.map((p) => p.id);
+    let invoices: any[] = [];
+
+    try {
+      const { data: invData, error: invErr } = await supabase
+        .from("invoices")
+        .select("id, property_id, status, amount_paid, total_amount, due_date")
+        .in("property_id", propertyIds);
+
+      if (!invErr && invData) {
+        invoices = invData;
+      }
+    } catch (e) {
+      console.warn("Invoice fetching skipped or not configured:", e);
+    }
+
+    // 3. Format and aggregate calculations
+    const formattedProperties = properties.map((prop: any) => {
       const units = prop.units || [];
-      const invoices = prop.invoices || [];
+      const propInvoices = invoices.filter((inv: any) => inv.property_id === prop.id);
 
       const totalUnits = units.length;
       const occupiedUnits = units.filter((u: any) => u.is_occupied).length;
       const vacantUnits = totalUnits - occupiedUnits;
 
-      const financials = invoices.reduce(
+      const financials = propInvoices.reduce(
         (acc: any, inv: any) => {
           const total = Number(inv.total_amount || 0);
           const paid = Number(inv.amount_paid || 0);
@@ -155,6 +171,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ properties: formattedProperties });
   } catch (err: any) {
+    console.error("GET properties-overview unhandled error:", err);
     return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
   }
 }
@@ -184,7 +201,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Find existing property by name & owner OR create new property
     let propertyId: string;
 
     const { data: existingProp } = await supabase
@@ -216,7 +232,6 @@ export async function POST(request: NextRequest) {
       propertyId = newProp.id;
     }
 
-    // 2. Insert the unit associated with the property
     const { error: unitErr } = await supabase.from("units").insert({
       property_id: propertyId,
       unit_number: unitNumber,
@@ -257,7 +272,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Unit ID is required for updates." }, { status: 400 });
     }
 
-    // Verify ownership
     const { data: unit, error: fetchErr } = await supabase
       .from("units")
       .select("id, properties!inner(owner_id)")
@@ -268,7 +282,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Unit not found or access denied." }, { status: 404 });
     }
 
-    // Update the unit fields
     const { error: updateErr } = await supabase
       .from("units")
       .update({
