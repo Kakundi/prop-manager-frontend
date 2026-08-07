@@ -1,8 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-async function getSupabaseServerClient(request: NextRequest) {
+async function getSupabaseServerClient() {
   const cookieStore = await cookies();
 
   return createServerClient(
@@ -25,28 +26,45 @@ async function getSupabaseServerClient(request: NextRequest) {
   );
 }
 
-async function getAuthenticatedUser(request: NextRequest, supabase: any) {
-  // 1. Try standard cookie session
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) return user;
-
-  // 2. Fallback: Check for Bearer token in request headers
+async function getAuthenticatedUserAndClient(request: NextRequest) {
+  // 1. Check for Bearer token in request headers
   const authHeader = request.headers.get("authorization");
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.split(" ")[1];
-    const { data: { user: tokenUser } } = await supabase.auth.getUser(token);
-    if (tokenUser) return tokenUser;
+
+    const bearerClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      }
+    );
+
+    const { data: { user } } = await bearerClient.auth.getUser(token);
+    if (user) {
+      return { user, supabase: bearerClient };
+    }
   }
 
-  return null;
+  // 2. Fallback: Cookie-based auth
+  const serverClient = await getSupabaseServerClient();
+  const { data: { user } } = await serverClient.auth.getUser();
+  if (user) {
+    return { user, supabase: serverClient };
+  }
+
+  return { user: null, supabase: null };
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await getSupabaseServerClient(request);
-    const user = await getAuthenticatedUser(request, supabase);
+    const { user, supabase } = await getAuthenticatedUserAndClient(request);
 
-    if (!user) {
+    if (!user || !supabase) {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
     }
 
@@ -84,10 +102,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await getSupabaseServerClient(request);
-    const user = await getAuthenticatedUser(request, supabase);
+    const { user, supabase } = await getAuthenticatedUserAndClient(request);
 
-    if (!user) {
+    if (!user || !supabase) {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
     }
 
