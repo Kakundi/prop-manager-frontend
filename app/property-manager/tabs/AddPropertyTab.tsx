@@ -1,456 +1,584 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { 
-  Loader2, 
-  CheckCircle2, 
-  AlertCircle, 
-  Building, 
-  Edit3, 
-  Save, 
-  X, 
-  DollarSign, 
-  Layers 
-} from 'lucide-react';
+import { useEffect, useState, FormEvent } from "react";
+import { createBrowserClient } from "@supabase/ssr";
 
-export interface PropertyRecord {
+interface Unit {
   id: string;
-  name: string;
-  unit_name_or_number: string;
-  rent_per_unit: number;
+  property_id: string;
+  unit_number: string;
+  rent_amount: number;
   garbage_fee: number;
   parking_fee: number;
-  water_fee_per_meter: number;
-  created_at?: string;
+  water_fee: number;
+  is_occupied: boolean;
 }
 
-export const AddPropertyTab: React.FC = () => {
-  // Form State
-  const [propertyName, setPropertyName] = useState('');
-  const [unitIdentifier, setUnitIdentifier] = useState('');
-  const [rentPerUnit, setRentPerUnit] = useState<number | ''>('');
-  const [garbageFee, setGarbageFee] = useState<number | ''>('');
-  const [parkingFee, setParkingFee] = useState<number | ''>('');
-  const [waterFeePerMeter, setWaterFeePerMeter] = useState<number | ''>('');
+interface Property {
+  id: string;
+  name: string;
+  location: string;
+  water_rate_per_unit: number;
+  units: Unit[];
+}
 
-  // UI & Data State
-  const [loading, setLoading] = useState(false);
-  const [fetchingList, setFetchingList] = useState(true);
-  const [propertiesList, setPropertiesList] = useState<PropertyRecord[]>([]);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+interface AddPropertyTabProps {
+  currentUserId?: string;
+}
 
-  // Modal / Editing State
-  const [editingProperty, setEditingProperty] = useState<PropertyRecord | null>(null);
-  const [editLoading, setEditLoading] = useState(false);
+export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
-  // Fetch Existing Properties on Component Mount
-  const fetchProperties = async () => {
+  // Form state
+  const [propertyName, setPropertyName] = useState("");
+  const [location, setLocation] = useState("");
+  const [waterRate, setWaterRate] = useState<number | "">("");
+
+  const [unitNumber, setUnitNumber] = useState("");
+  const [rentAmount, setRentAmount] = useState<number | "">("");
+  const [garbageFee, setGarbageFee] = useState<number | "">(0);
+  const [parkingFee, setParkingFee] = useState<number | "">(0);
+  const [waterFee, setWaterFee] = useState<number | "">(0);
+
+  // Submission state
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
+
+  // Overview state
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+
+  // Edit modals state
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const fetchOverview = async () => {
     try {
-      setFetchingList(true);
-      const res = await fetch('/property-manager/api/properties');
-      if (res.ok) {
-        const data = await res.json();
-        setPropertiesList(data.properties || data || []);
+      setListLoading(true);
+      setListError(null);
+      const res = await fetch("/owner/api/properties-overview");
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Failed to fetch (Status: ${res.status})`);
       }
-    } catch (err) {
-      console.error('Failed to load existing properties list:', err);
+
+      const data = await res.json();
+      setProperties(data.properties || []);
+    } catch (err: any) {
+      console.error("Fetch overview error:", err);
+      setListError(err.message || "Failed to load properties.");
     } finally {
-      setFetchingList(false);
+      setListLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchProperties();
+    fetchOverview();
   }, []);
 
-  // Handle New Property Submission
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setFeedback(null);
+    setSubmitting(true);
+    setFormError(null);
+    setFormSuccess(null);
 
     try {
-      const payload = {
-        name: propertyName,
-        unit_name_or_number: unitIdentifier,
-        rent_per_unit: Number(rentPerUnit),
-        garbage_fee: garbageFee !== '' ? Number(garbageFee) : 0,
-        parking_fee: parkingFee !== '' ? Number(parkingFee) : 0,
-        water_fee_per_meter: waterFeePerMeter !== '' ? Number(waterFeePerMeter) : 0,
-      };
+      let userId = currentUserId;
+      if (!userId) {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) throw new Error("User session invalid.");
+        userId = user.id;
+      }
 
-      const res = await fetch('/property-manager/api/properties', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+      const cleanPropName = propertyName.trim();
+      let propertyId: string;
+
+      const { data: existing, error: checkError } = await supabase
+        .from("properties")
+        .select("id")
+        .ilike("name", cleanPropName);
+
+      if (checkError) throw checkError;
+
+      if (existing && existing.length > 0) {
+        propertyId = existing[0].id;
+      } else {
+        const { data: newProp, error: propError } = await supabase
+          .from("properties")
+          .insert({
+            name: cleanPropName,
+            location: location.trim(),
+            water_rate_per_unit: Number(waterRate) || 0,
+            owner_id: userId,
+          })
+          .select("id")
+          .single();
+
+        if (propError) throw propError;
+        propertyId = newProp.id;
+      }
+
+      const { error: unitError } = await supabase.from("units").insert({
+        property_id: propertyId,
+        unit_number: unitNumber.trim(),
+        rent_amount: Number(rentAmount) || 0,
+        garbage_fee: Number(garbageFee) || 0,
+        parking_fee: Number(parkingFee) || 0,
+        water_fee: Number(waterFee) || 0,
+        is_occupied: false,
       });
 
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to add property record to database.');
+      if (unitError) throw unitError;
 
-      setFeedback({
-        type: 'success',
-        msg: `Property "${propertyName}" successfully added!`,
-      });
+      setFormSuccess(`Saved property and unit ${unitNumber}`);
+      setUnitNumber("");
+      setRentAmount("");
+      setGarbageFee(0);
+      setParkingFee(0);
+      setWaterFee(0);
 
-      // Reset Form Fields
-      setPropertyName('');
-      setUnitIdentifier('');
-      setRentPerUnit('');
-      setGarbageFee('');
-      setParkingFee('');
-      setWaterFeePerMeter('');
-
-      // Refresh Listed Records
-      await fetchProperties();
+      fetchOverview();
     } catch (err: any) {
-      setFeedback({ type: 'error', msg: err.message || 'Error creating property.' });
+      setFormError(err.message || "Failed to save record.");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  // Handle Editing & Updating Property Pricing
-  const handleUpdateProperty = async (e: React.FormEvent) => {
+  const handleUpdateProperty = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingProperty) return;
+    setEditSubmitting(true);
+    setEditError(null);
 
-    setEditLoading(true);
     try {
-      const res = await fetch(`/property-manager/api/properties/${editingProperty.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingProperty),
-      });
+      const { error } = await supabase
+        .from("properties")
+        .update({
+          name: editingProperty.name.trim(),
+          location: editingProperty.location.trim(),
+          water_rate_per_unit: Number(editingProperty.water_rate_per_unit) || 0,
+        })
+        .eq("id", editingProperty.id);
 
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to update property details.');
-      }
-
+      if (error) throw error;
       setEditingProperty(null);
-      await fetchProperties();
+      fetchOverview();
     } catch (err: any) {
-      alert(err.message || 'Error updating property.');
+      setEditError(err.message || "Failed to update property.");
     } finally {
-      setEditLoading(false);
+      setEditSubmitting(false);
+    }
+  };
+
+  const handleUpdateUnit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editingUnit) return;
+    setEditSubmitting(true);
+    setEditError(null);
+
+    try {
+      const { error } = await supabase
+        .from("units")
+        .update({
+          unit_number: editingUnit.unit_number.trim(),
+          rent_amount: Number(editingUnit.rent_amount) || 0,
+          garbage_fee: Number(editingUnit.garbage_fee) || 0,
+          parking_fee: Number(editingUnit.parking_fee) || 0,
+          water_fee: Number(editingUnit.water_fee) || 0,
+          is_occupied: editingUnit.is_occupied,
+        })
+        .eq("id", editingUnit.id);
+
+      if (error) throw error;
+      setEditingUnit(null);
+      fetchOverview();
+    } catch (err: any) {
+      setEditError(err.message || "Failed to update unit.");
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
   return (
-    <div className="space-y-8 max-w-5xl">
-      {/* 1. ADD PROPERTY FORM SECTION */}
-      <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
-            <Building size={22} />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">Add New Property & Units</h2>
-            <p className="text-xs text-gray-500">Configure property names, unit codes/numbers, and billing fees.</p>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold">Add New Property & Units</h1>
+        <p className="text-gray-600">
+          Configure property names, locations, unit codes/numbers, and fee schedules.
+        </p>
+      </div>
+
+      {/* FORM SECTION */}
+      <form onSubmit={handleSubmit} className="border p-6 rounded-lg bg-white shadow-sm space-y-6">
+        {formError && <div className="p-3 bg-red-100 text-red-700 rounded">{formError}</div>}
+        {formSuccess && <div className="p-3 bg-green-100 text-green-700 rounded">{formSuccess}</div>}
+
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold border-b pb-2">1. Property Information</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium">Property Name *</label>
+              <input
+                type="text"
+                required
+                className="w-full border rounded p-2 mt-1"
+                placeholder="e.g. Sunrise Heights"
+                value={propertyName}
+                onChange={(e) => setPropertyName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Location</label>
+              <input
+                type="text"
+                className="w-full border rounded p-2 mt-1"
+                placeholder="e.g. Kilimani, Nairobi"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Water Rate / Unit (KES)</label>
+              <input
+                type="number"
+                className="w-full border rounded p-2 mt-1"
+                placeholder="N/A"
+                value={waterRate}
+                onChange={(e) => setWaterRate(e.target.value ? Number(e.target.value) : "")}
+              />
+            </div>
           </div>
         </div>
 
-        {feedback && (
-          <div
-            className={`p-4 rounded-lg text-sm mb-6 flex items-center gap-2 ${
-              feedback.type === 'success'
-                ? 'bg-green-50 border border-green-200 text-green-800'
-                : 'bg-red-50 border border-red-200 text-red-800'
-            }`}
-          >
-            {feedback.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
-            {feedback.msg}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold border-b pb-2">2. Unit Details & Fees</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Property Name
-              </label>
+              <label className="block text-sm font-medium">Unit Name / Number *</label>
               <input
                 type="text"
                 required
-                value={propertyName}
-                onChange={(e) => setPropertyName(e.target.value)}
-                placeholder="e.g. Sunset Heights Apartments"
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full border rounded p-2 mt-1"
+                placeholder="e.g. A-101"
+                value={unitNumber}
+                onChange={(e) => setUnitNumber(e.target.value)}
               />
             </div>
-
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Unit Name / Number (Text)
-              </label>
-              <input
-                type="text"
-                required
-                value={unitIdentifier}
-                onChange={(e) => setUnitIdentifier(e.target.value)}
-                placeholder="e.g. Block A1, Suite 4B, or A1-A10"
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Rent Per Unit
-              </label>
+              <label className="block text-sm font-medium">Rent Per Unit (KES) *</label>
               <input
                 type="number"
                 required
-                min="0"
-                value={rentPerUnit}
-                onChange={(e) => setRentPerUnit(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="e.g. 800"
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full border rounded p-2 mt-1"
+                value={rentAmount}
+                onChange={(e) => setRentAmount(e.target.value ? Number(e.target.value) : "")}
               />
             </div>
-
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Garbage Fee
-              </label>
+              <label className="block text-sm font-medium">Garbage Fee</label>
               <input
                 type="number"
-                min="0"
+                className="w-full border rounded p-2 mt-1"
                 value={garbageFee}
-                onChange={(e) => setGarbageFee(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="e.g. 30"
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                onChange={(e) => setGarbageFee(e.target.value ? Number(e.target.value) : 0)}
               />
             </div>
-
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Parking Fee
-              </label>
+              <label className="block text-sm font-medium">Parking Fee</label>
               <input
                 type="number"
-                min="0"
+                className="w-full border rounded p-2 mt-1"
                 value={parkingFee}
-                onChange={(e) => setParkingFee(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="e.g. 50"
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                onChange={(e) => setParkingFee(e.target.value ? Number(e.target.value) : 0)}
               />
             </div>
-
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Water Fee / Meter
-              </label>
+              <label className="block text-sm font-medium">Water Fee</label>
               <input
                 type="number"
-                min="0"
-                value={waterFeePerMeter}
-                onChange={(e) => setWaterFeePerMeter(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="e.g. 5"
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full border rounded p-2 mt-1"
+                value={waterFee}
+                onChange={(e) => setWaterFee(e.target.value ? Number(e.target.value) : 0)}
               />
             </div>
           </div>
+        </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="animate-spin" size={18} />
-                Saving Property...
-              </>
-            ) : (
-              'Save Property'
-            )}
-          </button>
-        </form>
-      </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 font-medium"
+        >
+          {submitting ? "Saving..." : "Save Property"}
+        </button>
+      </form>
 
-      {/* 2. PROPERTIES & UNITS OVERVIEW TABLE */}
-      <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg">
-              <Layers size={22} />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-gray-800">Managed Properties & Units</h3>
-              <p className="text-xs text-gray-500">Overview of configured properties, assigned unit codes, and fee schedules.</p>
-            </div>
+      {/* OVERVIEW INVENTORY */}
+      <div className="border rounded-lg bg-white shadow-sm space-y-4 p-6">
+        <div className="flex justify-between items-center border-b pb-3">
+          <div>
+            <h2 className="text-xl font-bold">Registered Properties & Units</h2>
+            <p className="text-sm text-gray-500">
+              Complete inventory of your registered properties, unit codes, and occupancy status.
+            </p>
           </div>
           <button
-            onClick={fetchProperties}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-800 underline"
+            onClick={fetchOverview}
+            className="border px-4 py-2 rounded text-sm hover:bg-gray-50"
           >
             Refresh List
           </button>
         </div>
 
-        {fetchingList ? (
-          <div className="flex items-center justify-center py-12 text-gray-400 gap-2">
-            <Loader2 className="animate-spin" size={20} />
-            <span className="text-sm">Loading properties database...</span>
-          </div>
-        ) : propertiesList.length === 0 ? (
-          <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-            <p className="text-sm font-medium text-gray-500">No properties recorded yet.</p>
-            <p className="text-xs text-gray-400 mt-1">Fill in the form above to add your first property and unit configuration.</p>
-          </div>
+        {listLoading ? (
+          <p className="text-gray-500">Loading records...</p>
+        ) : listError ? (
+          <p className="text-red-500">{listError}</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">Property Name</th>
-                  <th className="py-3 px-4">Unit Name / Number</th>
-                  <th className="py-3 px-4">Rent</th>
-                  <th className="py-3 px-4">Garbage Fee</th>
-                  <th className="py-3 px-4">Parking Fee</th>
-                  <th className="py-3 px-4">Water / Unit</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                {propertiesList.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-gray-900">{item.name}</td>
-                    <td className="py-3.5 px-4">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                        {item.unit_name_or_number || 'N/A'}
+          <div className="space-y-6">
+            {properties.map((prop) => {
+              const totalUnits = prop.units?.length || 0;
+              const occupiedCount = prop.units?.filter((u) => u.is_occupied).length || 0;
+              const vacantCount = totalUnits - occupiedCount;
+
+              return (
+                <div key={prop.id} className="border rounded-lg overflow-hidden bg-white">
+                  {/* HEADER WITH EDIT PROPERTY BUTTON */}
+                  <div className="bg-gray-50 px-4 py-3 border-b flex flex-wrap justify-between items-center gap-2">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">{prop.name}</h3>
+                      <p className="text-xs text-gray-500">{prop.location}</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-medium">
+                        Total Units: {totalUnits}
                       </span>
-                    </td>
-                    <td className="py-3.5 px-4 font-medium">${item.rent_per_unit?.toLocaleString()}</td>
-                    <td className="py-3.5 px-4">${item.garbage_fee || 0}</td>
-                    <td className="py-3.5 px-4">${item.parking_fee || 0}</td>
-                    <td className="py-3.5 px-4">${item.water_fee_per_meter || 0}</td>
-                    <td className="py-3.5 px-4 text-right">
+                      <span className="px-2.5 py-1 rounded-full bg-green-50 text-green-700 font-medium">
+                        Occupied: {occupiedCount}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-medium">
+                        Vacant: {vacantCount}
+                      </span>
                       <button
-                        onClick={() => setEditingProperty(item)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-md transition"
+                        type="button"
+                        onClick={() => setEditingProperty(prop)}
+                        className="ml-2 px-3 py-1 bg-gray-900 text-white rounded hover:bg-black font-medium text-xs"
                       >
-                        <Edit3 size={14} /> Adjust Pricing
+                        Edit Property
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+
+                  {/* UNITS TABLE */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100 border-b text-gray-700">
+                          <th className="p-3">Unit Number</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3">Rent (KES)</th>
+                          <th className="p-3">Garbage</th>
+                          <th className="p-3">Parking</th>
+                          <th className="p-3">Water</th>
+                          <th className="p-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {prop.units?.map((unit) => (
+                          <tr key={unit.id} className="border-b hover:bg-gray-50">
+                            <td className="p-3 font-medium">{unit.unit_number}</td>
+                            <td className="p-3">
+                              <span
+                                className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                  unit.is_occupied
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-green-100 text-green-700"
+                                }`}
+                              >
+                                {unit.is_occupied ? "Occupied" : "Vacant"}
+                              </span>
+                            </td>
+                            <td className="p-3">KES {unit.rent_amount?.toLocaleString()}</td>
+                            <td className="p-3">KES {unit.garbage_fee?.toLocaleString()}</td>
+                            <td className="p-3">KES {unit.parking_fee?.toLocaleString()}</td>
+                            <td className="p-3">KES {unit.water_fee?.toLocaleString()}</td>
+                            <td className="p-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setEditingUnit(unit)}
+                                className="text-xs bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded font-medium"
+                              >
+                                Edit Unit
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* 3. EDIT PRICE ADJUSTMENT MODAL */}
+      {/* EDIT PROPERTY MODAL */}
       {editingProperty && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl border border-gray-200 max-w-md w-full p-6 space-y-6 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-              <div className="flex items-center gap-2">
-                <DollarSign size={20} className="text-blue-600" />
-                <h3 className="text-base font-bold text-gray-800">Adjust Property Pricing</h3>
-              </div>
-              <button
-                onClick={() => setEditingProperty(null)}
-                className="text-gray-400 hover:text-gray-600 rounded-lg p-1"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full space-y-4">
+            <h3 className="text-lg font-bold">Edit Property</h3>
+            {editError && <p className="text-sm text-red-600">{editError}</p>}
             <form onSubmit={handleUpdateProperty} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                  Property Name
-                </label>
+                <label className="block text-sm font-medium">Property Name</label>
                 <input
                   type="text"
+                  required
+                  className="w-full border rounded p-2 mt-1"
                   value={editingProperty.name}
-                  onChange={(e) => setEditingProperty({ ...editingProperty, name: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                  onChange={(e) =>
+                    setEditingProperty({ ...editingProperty, name: e.target.value })
+                  }
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                  Unit Name / Number
-                </label>
+                <label className="block text-sm font-medium">Location</label>
                 <input
                   type="text"
-                  value={editingProperty.unit_name_or_number || ''}
-                  onChange={(e) => setEditingProperty({ ...editingProperty, unit_name_or_number: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full border rounded p-2 mt-1"
+                  value={editingProperty.location || ""}
+                  onChange={(e) =>
+                    setEditingProperty({ ...editingProperty, location: e.target.value })
+                  }
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    Rent Per Unit
-                  </label>
-                  <input
-                    type="number"
-                    value={editingProperty.rent_per_unit}
-                    onChange={(e) => setEditingProperty({ ...editingProperty, rent_per_unit: Number(e.target.value) })}
-                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    Garbage Fee
-                  </label>
-                  <input
-                    type="number"
-                    value={editingProperty.garbage_fee}
-                    onChange={(e) => setEditingProperty({ ...editingProperty, garbage_fee: Number(e.target.value) })}
-                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    Parking Fee
-                  </label>
-                  <input
-                    type="number"
-                    value={editingProperty.parking_fee}
-                    onChange={(e) => setEditingProperty({ ...editingProperty, parking_fee: Number(e.target.value) })}
-                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    Water Fee / Meter
-                  </label>
-                  <input
-                    type="number"
-                    value={editingProperty.water_fee_per_meter}
-                    onChange={(e) => setEditingProperty({ ...editingProperty, water_fee_per_meter: Number(e.target.value) })}
-                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setEditingProperty(null)}
-                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-800 transition"
+                  className="px-4 py-2 border rounded text-sm hover:bg-gray-100"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={editLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50"
+                  disabled={editSubmitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:bg-gray-400"
                 >
-                  {editLoading ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                  Save Changes
+                  {editSubmitting ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT UNIT MODAL */}
+      {editingUnit && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-lg w-full space-y-4">
+            <h3 className="text-lg font-bold">Edit Unit {editingUnit.unit_number}</h3>
+            {editError && <p className="text-sm text-red-600">{editError}</p>}
+            <form onSubmit={handleUpdateUnit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium">Unit Number</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full border rounded p-2 mt-1"
+                    value={editingUnit.unit_number}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, unit_number: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Status</label>
+                  <select
+                    className="w-full border rounded p-2 mt-1"
+                    value={editingUnit.is_occupied ? "occupied" : "vacant"}
+                    onChange={(e) =>
+                      setEditingUnit({
+                        ...editingUnit,
+                        is_occupied: e.target.value === "occupied",
+                      })
+                    }
+                  >
+                    <option value="vacant">Vacant</option>
+                    <option value="occupied">Occupied</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Rent Amount (KES)</label>
+                  <input
+                    type="number"
+                    required
+                    className="w-full border rounded p-2 mt-1"
+                    value={editingUnit.rent_amount}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, rent_amount: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Garbage Fee (KES)</label>
+                  <input
+                    type="number"
+                    className="w-full border rounded p-2 mt-1"
+                    value={editingUnit.garbage_fee}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, garbage_fee: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Parking Fee (KES)</label>
+                  <input
+                    type="number"
+                    className="w-full border rounded p-2 mt-1"
+                    value={editingUnit.parking_fee}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, parking_fee: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Water Fee (KES)</label>
+                  <input
+                    type="number"
+                    className="w-full border rounded p-2 mt-1"
+                    value={editingUnit.water_fee}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, water_fee: Number(e.target.value) })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingUnit(null)}
+                  className="px-4 py-2 border rounded text-sm hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSubmitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:bg-gray-400"
+                >
+                  {editSubmitting ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>
@@ -459,4 +587,4 @@ export const AddPropertyTab: React.FC = () => {
       )}
     </div>
   );
-};
+}
