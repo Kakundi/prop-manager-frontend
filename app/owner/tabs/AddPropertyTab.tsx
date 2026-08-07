@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
+import { createClient } from "@/lib/supabaseClient";
 
 interface Unit {
   id: string;
@@ -51,7 +52,19 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
       setListLoading(true);
       setListError(null);
 
-      const res = await fetch("/owner/api/properties-overview", { cache: "no-store" });
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
+      const res = await fetch("/owner/api/properties-overview", {
+        cache: "no-store",
+        headers,
+      });
+
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || `Failed to fetch (Status ${res.status})`);
@@ -89,11 +102,19 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
         waterFee: Number(waterFee) || 0,
       };
 
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       const res = await fetch("/owner/api/properties-overview", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(payload),
       });
 
