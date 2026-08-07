@@ -5,7 +5,7 @@ import { OwnerTab } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardTab } from './tabs/DashboardTab';
-import { AddPropertyTab } from './tabs/AddPropertyTab'; // Fixed: Changed to named import
+import  AddPropertyTab from './tabs/AddPropertyTab'; // Fixed: Changed to named import
 import { UserManagementTab } from './tabs/UserManagementTab';
 import { TenantsTab } from './tabs/TenantsTab';
 import { UnassignedPaymentsTab } from './tabs/UnassignedPaymentsTab';
