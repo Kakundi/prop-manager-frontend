@@ -405,10 +405,10 @@ export default function AddPropertyPage() {
                             <tr className="bg-gray-100 border-b text-gray-700">
                               <th className="p-3">Unit Number</th>
                               <th className="p-3">Status</th>
-                              <th className="p-3">Rent</th>
-                              <th className="p-3">Garbage Fee</th>
-                              <th className="p-3">Parking Fee</th>
-                              <th className="p-3">Water Fee</th>
+                              <th className="p-3">Rent (KES)</th>
+                              <th className="p-3">Garbage</th>
+                              <th className="p-3">Parking</th>
+                              <th className="p-3">Water</th>
                               <th className="p-3 text-right">Actions</th>
                             </tr>
                           </thead>
@@ -434,7 +434,7 @@ export default function AddPropertyPage() {
                                 <td className="p-3 text-right">
                                   <button
                                     onClick={() => setEditingUnit(unit)}
-                                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                    className="text-xs bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 px-2.5 py-1 rounded font-medium"
                                   >
                                     Edit Unit
                                   </button>
