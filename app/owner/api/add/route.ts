@@ -2,23 +2,35 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-export async function POST(req: Request) {
+async function getSupabaseServerClient() {
   const cookieStore = await cookies();
 
-  // Create an authenticated Supabase server client bound to request cookies
-  const supabase = createServerClient(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // The `setAll` method was called from a Server Component or API Route.
+            // This can be ignored if you have middleware refreshing user sessions.
+          }
         },
       },
     }
   );
+}
 
-  // Retrieve authenticated user from session
+export async function POST(req: Request) {
+  const supabase = await getSupabaseServerClient();
+
   const {
     data: { user },
     error: authError,
@@ -35,7 +47,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { property, unit } = body;
 
-    // 1. Check if property already exists for this owner
     let propertyId: string;
 
     const { data: existingProp } = await supabase
@@ -48,7 +59,6 @@ export async function POST(req: Request) {
     if (existingProp) {
       propertyId = existingProp.id;
     } else {
-      // Create new property
       const { data: newProp, error: propError } = await supabase
         .from('properties')
         .insert({
@@ -64,7 +74,6 @@ export async function POST(req: Request) {
       propertyId = newProp.id;
     }
 
-    // 2. Insert Unit linked to Property
     const { data: newUnit, error: unitError } = await supabase
       .from('units')
       .insert({
@@ -89,19 +98,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  const cookieStore = await cookies();
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-      },
-    }
-  );
+  const supabase = await getSupabaseServerClient();
 
   const {
     data: { user },
