@@ -65,7 +65,7 @@ export default function OwnerPage() {
       case 'dashboard':
         return <DashboardTab />;
       case 'add-property':
-        return <AddPropertyTab />;
+        return <AddPropertyTab currentUserId={currentUserId} />;
       case 'users':
         return <UserManagementTab />;
       case 'tenants':

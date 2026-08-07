@@ -22,7 +22,11 @@ interface Property {
   units: Unit[];
 }
 
-export default function AddPropertyTab() {
+interface AddPropertyTabProps {
+  currentUserId?: string;
+}
+
+export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -48,16 +52,19 @@ export default function AddPropertyTab() {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
-  // Fetch properties directly via Supabase Auth session
+  const getEffectiveUserId = async (): Promise<string> => {
+    if (currentUserId) return currentUserId;
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) throw new Error("Authentication session expired. Please sign in again.");
+    return user.id;
+  };
+
   const fetchProperties = async () => {
     try {
       setListLoading(true);
       setListError(null);
 
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error("Authentication session expired. Please sign in again.");
-      }
+      const userId = await getEffectiveUserId();
 
       const { data, error } = await supabase
         .from("properties")
@@ -77,7 +84,7 @@ export default function AddPropertyTab() {
             is_occupied
           )
         `)
-        .eq("owner_id", user.id);
+        .eq("owner_id", userId);
 
       if (error) throw error;
       setProperties(data || []);
@@ -91,7 +98,7 @@ export default function AddPropertyTab() {
 
   useEffect(() => {
     fetchProperties();
-  }, []);
+  }, [currentUserId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -100,18 +107,15 @@ export default function AddPropertyTab() {
     setFormSuccess(null);
 
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) throw new Error("Session expired.");
-
+      const userId = await getEffectiveUserId();
       const cleanPropName = propertyName.trim();
       let propertyId: string;
 
-      // Check if property exists for this owner
       const { data: existing, error: checkError } = await supabase
         .from("properties")
         .select("id")
         .ilike("name", cleanPropName)
-        .eq("owner_id", user.id);
+        .eq("owner_id", userId);
 
       if (checkError) throw checkError;
 
@@ -124,7 +128,7 @@ export default function AddPropertyTab() {
             name: cleanPropName,
             location: location.trim(),
             water_rate_per_unit: Number(waterRate) || 0,
-            owner_id: user.id,
+            owner_id: userId,
           })
           .select("id")
           .single();
