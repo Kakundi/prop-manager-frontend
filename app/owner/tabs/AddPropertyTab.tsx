@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import { createBrowserClient } from "@supabase/ssr";
 
 interface Unit {
   id: string;
@@ -27,11 +26,6 @@ interface AddPropertyTabProps {
 }
 
 export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
   // Form state
   const [propertyName, setPropertyName] = useState("");
   const [location, setLocation] = useState("");
@@ -52,42 +46,19 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
-  const getEffectiveUserId = async (): Promise<string> => {
-    if (currentUserId) return currentUserId;
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error || !user) throw new Error("Authentication session expired. Please sign in again.");
-    return user.id;
-  };
-
   const fetchProperties = async () => {
     try {
       setListLoading(true);
       setListError(null);
 
-      const userId = await getEffectiveUserId();
+      const res = await fetch("/owner/api/properties-overview", { cache: "no-store" });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Failed to fetch (Status ${res.status})`);
+      }
 
-      const { data, error } = await supabase
-        .from("properties")
-        .select(`
-          id,
-          name,
-          location,
-          water_rate_per_unit,
-          units (
-            id,
-            property_id,
-            unit_number,
-            rent_amount,
-            garbage_fee,
-            parking_fee,
-            water_fee,
-            is_occupied
-          )
-        `)
-        .eq("owner_id", userId);
-
-      if (error) throw error;
-      setProperties(data || []);
+      const data = await res.json();
+      setProperties(data.properties || []);
     } catch (err: any) {
       console.error("Error fetching properties:", err);
       setListError(err.message || "Failed to load properties.");
@@ -107,49 +78,31 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
     setFormSuccess(null);
 
     try {
-      const userId = await getEffectiveUserId();
-      const cleanPropName = propertyName.trim();
-      let propertyId: string;
+      const payload = {
+        propertyName: propertyName.trim(),
+        location: location.trim(),
+        waterRate: Number(waterRate) || 0,
+        unitNumber: unitNumber.trim(),
+        rentAmount: Number(rentAmount) || 0,
+        garbageFee: Number(garbageFee) || 0,
+        parkingFee: Number(parkingFee) || 0,
+        waterFee: Number(waterFee) || 0,
+      };
 
-      const { data: existing, error: checkError } = await supabase
-        .from("properties")
-        .select("id")
-        .ilike("name", cleanPropName)
-        .eq("owner_id", userId);
-
-      if (checkError) throw checkError;
-
-      if (existing && existing.length > 0) {
-        propertyId = existing[0].id;
-      } else {
-        const { data: newProp, error: propError } = await supabase
-          .from("properties")
-          .insert({
-            name: cleanPropName,
-            location: location.trim(),
-            water_rate_per_unit: Number(waterRate) || 0,
-            owner_id: userId,
-          })
-          .select("id")
-          .single();
-
-        if (propError) throw propError;
-        propertyId = newProp.id;
-      }
-
-      const { error: unitError } = await supabase.from("units").insert({
-        property_id: propertyId,
-        unit_number: unitNumber.trim(),
-        rent_amount: Number(rentAmount) || 0,
-        garbage_fee: Number(garbageFee) || 0,
-        parking_fee: Number(parkingFee) || 0,
-        water_fee: Number(waterFee) || 0,
-        is_occupied: false,
+      const res = await fetch("/owner/api/properties-overview", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       });
 
-      if (unitError) throw unitError;
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to save property record.");
+      }
 
-      setFormSuccess(`Successfully saved ${cleanPropName} - Unit ${unitNumber}`);
+      setFormSuccess(`Successfully saved ${payload.propertyName} - Unit ${payload.unitNumber}`);
       setUnitNumber("");
       setRentAmount("");
       setGarbageFee(0);
