@@ -75,7 +75,6 @@ export async function GET(request: NextRequest) {
         id,
         name,
         location,
-        water_rate_per_unit,
         owner_id,
         units (
           id,
@@ -112,7 +111,6 @@ export async function POST(request: NextRequest) {
     const {
       propertyName,
       location,
-      waterRate,
       unitNumber,
       rentAmount,
       garbageFee,
@@ -146,7 +144,6 @@ export async function POST(request: NextRequest) {
           owner_id: user.id,
           name: propertyName,
           location: location || "",
-          water_rate_per_unit: waterRate || 0,
         })
         .select("id")
         .single();
@@ -164,10 +161,10 @@ export async function POST(request: NextRequest) {
     const { error: unitErr } = await supabase.from("units").insert({
       property_id: propertyId,
       unit_number: unitNumber,
-      rent_amount: rentAmount,
-      garbage_fee: garbageFee || 0,
-      parking_fee: parkingFee || 0,
-      water_fee: waterFee || 0,
+      rent_amount: Number(rentAmount),
+      garbage_fee: garbageFee === null || garbageFee === undefined ? null : Number(garbageFee),
+      parking_fee: parkingFee === null || parkingFee === undefined ? null : Number(parkingFee),
+      water_fee: waterFee === null || waterFee === undefined ? null : Number(waterFee),
       is_occupied: false,
     });
 
@@ -176,6 +173,61 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, propertyId });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const { user, supabase } = await getAuthenticatedUserAndClient(request);
+
+    if (!user || !supabase) {
+      return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const {
+      unitId,
+      unitNumber,
+      rentAmount,
+      garbageFee,
+      parkingFee,
+      waterFee,
+    } = body;
+
+    if (!unitId) {
+      return NextResponse.json({ error: "Unit ID is required for updates." }, { status: 400 });
+    }
+
+    // Verify ownership
+    const { data: unit, error: fetchErr } = await supabase
+      .from("units")
+      .select("id, properties!inner(owner_id)")
+      .eq("id", unitId)
+      .single();
+
+    if (fetchErr || !unit) {
+      return NextResponse.json({ error: "Unit not found or access denied." }, { status: 404 });
+    }
+
+    // Update the unit fields
+    const { error: updateErr } = await supabase
+      .from("units")
+      .update({
+        unit_number: unitNumber,
+        rent_amount: Number(rentAmount),
+        garbage_fee: garbageFee === null || garbageFee === undefined ? null : Number(garbageFee),
+        parking_fee: parkingFee === null || parkingFee === undefined ? null : Number(parkingFee),
+        water_fee: waterFee === null || waterFee === undefined ? null : Number(waterFee),
+      })
+      .eq("id", unitId);
+
+    if (updateErr) {
+      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
   }

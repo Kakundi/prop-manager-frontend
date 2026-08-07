@@ -52,6 +52,23 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
+  // Edit Modal State
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
+  const [editUnitNumber, setEditUnitNumber] = useState("");
+  const [editRentAmount, setEditRentAmount] = useState<number | "">("");
+
+  const [editGarbageFee, setEditGarbageFee] = useState<number | "">(0);
+  const [isEditGarbageNA, setIsEditGarbageNA] = useState(false);
+
+  const [editParkingFee, setEditParkingFee] = useState<number | "">(0);
+  const [isEditParkingNA, setIsEditParkingNA] = useState(false);
+
+  const [editWaterFee, setEditWaterFee] = useState<number | "">(0);
+  const [isEditWaterNA, setIsEditWaterNA] = useState(false);
+
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   const fetchProperties = async () => {
     try {
       setListLoading(true);
@@ -144,6 +161,70 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
       setFormError(err.message || "Failed to save record.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleOpenEditModal = (unit: Unit) => {
+    setEditingUnit(unit);
+    setEditUnitNumber(unit.unit_number);
+    setEditRentAmount(unit.rent_amount ?? "");
+
+    setIsEditGarbageNA(unit.garbage_fee === null);
+    setEditGarbageFee(unit.garbage_fee === null ? "" : unit.garbage_fee);
+
+    setIsEditParkingNA(unit.parking_fee === null);
+    setEditParkingFee(unit.parking_fee === null ? "" : unit.parking_fee);
+
+    setIsEditWaterNA(unit.water_fee === null);
+    setEditWaterFee(unit.water_fee === null ? "" : unit.water_fee);
+
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editingUnit) return;
+
+    setEditSubmitting(true);
+    setEditError(null);
+
+    try {
+      const payload = {
+        unitId: editingUnit.id,
+        unitNumber: editUnitNumber.trim(),
+        rentAmount: Number(editRentAmount) || 0,
+        garbageFee: isEditGarbageNA ? null : Number(editGarbageFee) || 0,
+        parkingFee: isEditParkingNA ? null : Number(editParkingFee) || 0,
+        waterFee: isEditWaterNA ? null : Number(editWaterFee) || 0,
+      };
+
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
+      const res = await fetch("/owner/api/properties-overview", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to update unit record.");
+      }
+
+      setEditingUnit(null);
+      fetchProperties();
+    } catch (err: any) {
+      setEditError(err.message || "Failed to save unit updates.");
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
@@ -363,6 +444,7 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                           <th className="p-3">Garbage</th>
                           <th className="p-3">Parking</th>
                           <th className="p-3">Water Fee / Meter</th>
+                          <th className="p-3 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -390,6 +472,14 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
                             <td className="p-3">
                               {unit.water_fee === null ? "N/A" : `KES ${unit.water_fee?.toLocaleString()}`}
                             </td>
+                            <td className="p-3 text-right">
+                              <button
+                                onClick={() => handleOpenEditModal(unit)}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium px-3 py-1.5 rounded border transition"
+                              >
+                                Edit
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -401,6 +491,150 @@ export default function AddPropertyTab({ currentUserId }: AddPropertyTabProps) {
           </div>
         )}
       </div>
+
+      {/* EDIT UNIT MODAL */}
+      {editingUnit && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-lg font-bold text-gray-900">
+                Edit Unit {editingUnit.unit_number}
+              </h3>
+              <button
+                onClick={() => setEditingUnit(null)}
+                className="text-gray-400 hover:text-gray-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {editError && (
+              <div className="p-3 bg-red-100 text-red-700 rounded text-sm">
+                {editError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Unit Name / Number *</label>
+                <input
+                  type="text"
+                  required
+                  className="w-full border rounded p-2 mt-1"
+                  value={editUnitNumber}
+                  onChange={(e) => setEditUnitNumber(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Rent Per Unit (KES) *</label>
+                <input
+                  type="number"
+                  required
+                  className="w-full border rounded p-2 mt-1"
+                  value={editRentAmount}
+                  onChange={(e) => setEditRentAmount(e.target.value ? Number(e.target.value) : "")}
+                />
+              </div>
+
+              {/* Garbage Fee Edit */}
+              <div>
+                <div className="flex justify-between items-center">
+                  <label className="block text-sm font-medium text-gray-700">Garbage Fee</label>
+                  <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isEditGarbageNA}
+                      onChange={(e) => {
+                        setIsEditGarbageNA(e.target.checked);
+                        if (e.target.checked) setEditGarbageFee("");
+                      }}
+                    />
+                    N/A
+                  </label>
+                </div>
+                <input
+                  type="number"
+                  disabled={isEditGarbageNA}
+                  placeholder={isEditGarbageNA ? "N/A" : "0"}
+                  className="w-full border rounded p-2 mt-1 disabled:bg-gray-100 disabled:text-gray-400"
+                  value={isEditGarbageNA ? "" : editGarbageFee}
+                  onChange={(e) => setEditGarbageFee(e.target.value ? Number(e.target.value) : 0)}
+                />
+              </div>
+
+              {/* Parking Fee Edit */}
+              <div>
+                <div className="flex justify-between items-center">
+                  <label className="block text-sm font-medium text-gray-700">Parking Fee</label>
+                  <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isEditParkingNA}
+                      onChange={(e) => {
+                        setIsEditParkingNA(e.target.checked);
+                        if (e.target.checked) setEditParkingFee("");
+                      }}
+                    />
+                    N/A
+                  </label>
+                </div>
+                <input
+                  type="number"
+                  disabled={isEditParkingNA}
+                  placeholder={isEditParkingNA ? "N/A" : "0"}
+                  className="w-full border rounded p-2 mt-1 disabled:bg-gray-100 disabled:text-gray-400"
+                  value={isEditParkingNA ? "" : editParkingFee}
+                  onChange={(e) => setEditParkingFee(e.target.value ? Number(e.target.value) : 0)}
+                />
+              </div>
+
+              {/* Water Fee Edit */}
+              <div>
+                <div className="flex justify-between items-center">
+                  <label className="block text-sm font-medium text-gray-700">Water Fee / Meter</label>
+                  <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isEditWaterNA}
+                      onChange={(e) => {
+                        setIsEditWaterNA(e.target.checked);
+                        if (e.target.checked) setEditWaterFee("");
+                      }}
+                    />
+                    N/A
+                  </label>
+                </div>
+                <input
+                  type="number"
+                  disabled={isEditWaterNA}
+                  placeholder={isEditWaterNA ? "N/A" : "0"}
+                  className="w-full border rounded p-2 mt-1 disabled:bg-gray-100 disabled:text-gray-400"
+                  value={isEditWaterNA ? "" : editWaterFee}
+                  onChange={(e) => setEditWaterFee(e.target.value ? Number(e.target.value) : 0)}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setEditingUnit(null)}
+                  className="px-4 py-2 border rounded text-sm hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSubmitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:bg-gray-400"
+                >
+                  {editSubmitting ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
