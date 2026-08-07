@@ -19,7 +19,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 // Import tab components
 import { DashboardTab } from './tabs/DashboardTab';
-import { AddPropertyTab } from './tabs/AddPropertyTab';
+import  AddPropertyTab from './tabs/AddPropertyTab';
 import { UserManagementTab } from './tabs/UserManagementTab';
 import { TenantsTab } from './tabs/TenantsTab';
 import { UnassignedPaymentsTab } from './tabs/UnassignedPaymentsTab';
