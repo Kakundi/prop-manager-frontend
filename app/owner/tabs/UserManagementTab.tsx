@@ -27,7 +27,10 @@ export const UserManagementTab: React.FC = () => {
 
     // Path 1: Fetch Properties Overview (GET /owner/api/properties-overview)
     try {
-      const propsRes = await fetch('/owner/api/properties-overview', { cache: 'no-store' });
+      const propsRes = await fetch('/owner/api/properties-overview', { 
+        cache: 'no-store',
+        credentials: 'include' // Ensures auth cookies are sent
+      });
       if (propsRes.ok) {
         const propsData = await propsRes.json();
         const loadedProps = (propsData.properties || []).map((p: any) => ({
@@ -50,7 +53,10 @@ export const UserManagementTab: React.FC = () => {
 
     // Path 2: Fetch Managed Users Directory (GET /owner/api/invite-user)
     try {
-      const usersRes = await fetch('/owner/api/invite-user', { cache: 'no-store' });
+      const usersRes = await fetch('/owner/api/invite-user', { 
+        cache: 'no-store',
+        credentials: 'include' // Ensures auth cookies are sent
+      });
       if (usersRes.ok) {
         const usersData = await usersRes.json();
         setUsers(usersData.users || []);
@@ -84,6 +90,7 @@ export const UserManagementTab: React.FC = () => {
       const res = await fetch('/owner/api/invite-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Ensures auth cookies are sent
         body: JSON.stringify({
           full_name: fullName,
           email,
