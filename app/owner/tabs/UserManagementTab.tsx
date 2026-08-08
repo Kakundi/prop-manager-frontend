@@ -25,7 +25,7 @@ export const UserManagementTab: React.FC = () => {
       setFetching(true);
       setFetchError(null);
 
-      // Fetch owner properties only
+      // 1. Fetch properties directly from your working properties-overview endpoint
       const propsRes = await fetch('/owner/api/properties-overview', { cache: 'no-store' });
       const usersRes = await fetch('/owner/api/invite-user', { cache: 'no-store' });
 
@@ -34,21 +34,23 @@ export const UserManagementTab: React.FC = () => {
         const loadedProps = (propsData.properties || []).map((p: any) => ({
           id: p.propertyId,
           name: p.propertyName,
-          units: (p.units || []).map((u: any) => u.unit_number || u),
+          units: (p.units || []).map((u: any) => String(u.unit_number || u)),
         }));
         setAvailableProperties(loadedProps);
         if (loadedProps.length > 0 && !selectedPropertyId) {
           setSelectedPropertyId(loadedProps[0].id);
         }
+      } else {
+        throw new Error('Failed to load property overview data.');
       }
 
       if (usersRes.ok) {
         const usersData = await usersRes.json();
         setUsers(usersData.users || []);
       }
-    } catch (err) {
-      console.error('Failed to load user management data from database:', err);
-      setFetchError('Notice: Database connectivity limited. You can still submit the form below.');
+    } catch (err: any) {
+      console.error('Failed to load user management data:', err);
+      setFetchError('Notice: Could not sync current records. You can still submit the form below.');
     } finally {
       setFetching(false);
     }
@@ -75,7 +77,7 @@ export const UserManagementTab: React.FC = () => {
           phone,
           role,
           property_id: selectedPropertyId,
-          unit_number: selectedUnit === 'N/A' || !selectedUnit ? undefined : selectedUnit,
+          unit_number: selectedUnit === 'N/A' || !selectedUnit ? null : selectedUnit,
         }),
       });
 
@@ -224,7 +226,6 @@ export const UserManagementTab: React.FC = () => {
               </select>
             </div>
 
-            {/* Always available unit selection field with explicit N/A choice */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Assign Unit</label>
               <select

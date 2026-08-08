@@ -1,126 +1,597 @@
 import { createServerClient } from "@supabase/ssr";
+
+import { createClient } from "@supabase/supabase-js";
+
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
 
-export async function GET() {
-  try {
-    const cookieStore = await cookies();
+import { NextRequest, NextResponse } from "next/server";
 
-    // Create server-side Supabase client using stored cookies
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {
-              // Ignore in Server Component/API Route context if headers are sent
-            }
-          },
-        },
-      }
-    );
 
-    // Verify user session
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: "Unauthorized access. Please log in again." },
-        { status: 401 }
-      );
-    }
+async function getSupabaseServerClient() {
 
-    // 1. Fetch properties owned by this specific owner
-    const { data: properties, error: propsError } = await supabase
-      .from("properties")
-      .select("id, name, location, created_at")
-      .eq("owner_id", user.id);
+const cookieStore = await cookies();
 
-    if (propsError) {
-      return NextResponse.json({ error: propsError.message }, { status: 500 });
-    }
 
-    if (!properties || properties.length === 0) {
-      return NextResponse.json({ properties: [] });
-    }
 
-    const propertyIds = properties.map((p) => p.id);
+return createServerClient(
 
-    // 2. Fetch all units associated with these properties
-    const { data: units, error: unitsError } = await supabase
-      .from("units")
-      .select("id, property_id, unit_number, status, rent_amount")
-      .in("property_id", propertyIds);
+process.env.NEXT_PUBLIC_SUPABASE_URL!,
 
-    if (unitsError) {
-      console.warn("Notice: Could not fetch units directly:", unitsError.message);
-    }
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 
-    // 3. Fetch financial invoices for metrics calculations
-    const { data: invoices, error: invError } = await supabase
-      .from("invoices")
-      .select("id, property_id, amount, status")
-      .in("property_id", propertyIds);
+{
 
-    if (invError) {
-      console.warn("Notice: Could not fetch invoices:", invError.message);
-    }
+cookies: {
 
-    // Map units and invoices back to their respective properties
-    const propertyOverview = properties.map((prop) => {
-      const propUnits = (units || []).filter((u) => u.property_id === prop.id);
-      const propInvoices = (invoices || []).filter((i) => i.property_id === prop.id);
+getAll() {
 
-      const totalUnits = propUnits.length;
-      const occupiedUnits = propUnits.filter((u) => u.status === "occupied").length;
-      const vacantUnits = totalUnits - occupiedUnits;
-      const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+return cookieStore.getAll();
 
-      const totalExpectedIncome = propUnits.reduce(
-        (sum, u) => sum + Number(u.rent_amount || 0),
-        0
-      );
+},
 
-      const paidInvoicesAmount = propInvoices
-        .filter((i) => i.status === "paid")
-        .reduce((sum, i) => sum + Number(i.amount || 0), 0);
+setAll(cookiesToSet) {
 
-      const pendingInvoicesAmount = propInvoices
-        .filter((i) => i.status === "unpaid" || i.status === "pending")
-        .reduce((sum, i) => sum + Number(i.amount || 0), 0);
+try {
 
-      return {
-        propertyId: prop.id,
-        propertyName: prop.name,
-        location: prop.location || "N/A",
-        units: propUnits,
-        totalUnits,
-        occupiedUnits,
-        vacantUnits,
-        occupancyRate,
-        totalExpectedIncome,
-        paidInvoicesAmount,
-        pendingInvoicesAmount,
-      };
-    });
+cookiesToSet.forEach(({ name, value, options }) =>
 
-    return NextResponse.json({ properties: propertyOverview });
-  } catch (err: any) {
-    console.error("Dashboard Overview Endpoint Error:", err);
-    return NextResponse.json(
-      { error: err.message || "An unexpected error occurred." },
-      { status: 500 }
-    );
-  }
+cookieStore.set(name, value, options)
+
+);
+
+} catch {}
+
+},
+
+},
+
+}
+
+);
+
+}
+
+
+
+async function getAuthenticatedUserAndClient(request: NextRequest) {
+
+// 1. Check for Bearer token in request headers
+
+const authHeader = request.headers.get("authorization");
+
+if (authHeader && authHeader.startsWith("Bearer ")) {
+
+const token = authHeader.split(" ")[1];
+
+
+
+const bearerClient = createClient(
+
+process.env.NEXT_PUBLIC_SUPABASE_URL!,
+
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+
+{
+
+global: {
+
+headers: {
+
+Authorization: `Bearer ${token}`,
+
+},
+
+},
+
+}
+
+);
+
+
+
+const { data: { user } } = await bearerClient.auth.getUser(token);
+
+if (user) {
+
+return { user, supabase: bearerClient };
+
+}
+
+}
+
+
+
+// 2. Fallback: Cookie-based auth
+
+const serverClient = await getSupabaseServerClient();
+
+const { data: { user } } = await serverClient.auth.getUser();
+
+if (user) {
+
+return { user, supabase: serverClient };
+
+}
+
+
+
+return { user: null, supabase: null };
+
+}
+
+
+
+export async function GET(request: NextRequest) {
+
+try {
+
+const { user, supabase } = await getAuthenticatedUserAndClient(request);
+
+
+
+if (!user || !supabase) {
+
+return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
+
+}
+
+
+
+// 1. Query properties and units
+
+const { data: properties, error: propErr } = await supabase
+
+.from("properties")
+
+.select(`
+
+id,
+
+name,
+
+location,
+
+owner_id,
+
+units (
+
+id,
+
+property_id,
+
+unit_number,
+
+rent_amount,
+
+garbage_fee,
+
+parking_fee,
+
+is_occupied
+
+)
+
+`)
+
+.eq("owner_id", user.id);
+
+
+
+if (propErr) {
+
+console.error("Properties query error:", propErr);
+
+return NextResponse.json({ error: propErr.message }, { status: 500 });
+
+}
+
+
+
+if (!properties || properties.length === 0) {
+
+return NextResponse.json({ properties: [] });
+
+}
+
+
+
+// 2. Safely fetch invoices in a separate query to prevent join/schema errors
+
+const propertyIds = properties.map((p) => p.id);
+
+let invoices: any[] = [];
+
+
+
+try {
+
+const { data: invData, error: invErr } = await supabase
+
+.from("invoices")
+
+.select("id, property_id, status, amount_paid, total_amount, due_date")
+
+.in("property_id", propertyIds);
+
+
+
+if (!invErr && invData) {
+
+invoices = invData;
+
+}
+
+} catch (e) {
+
+console.warn("Invoice fetching skipped or not configured:", e);
+
+}
+
+
+
+// 3. Format and aggregate calculations
+
+const formattedProperties = properties.map((prop: any) => {
+
+const units = prop.units || [];
+
+const propInvoices = invoices.filter((inv: any) => inv.property_id === prop.id);
+
+
+
+const totalUnits = units.length;
+
+const occupiedUnits = units.filter((u: any) => u.is_occupied).length;
+
+const vacantUnits = totalUnits - occupiedUnits;
+
+
+
+const financials = propInvoices.reduce(
+
+(acc: any, inv: any) => {
+
+const total = Number(inv.total_amount || 0);
+
+const paid = Number(inv.amount_paid || 0);
+
+const status = inv.status?.toLowerCase();
+
+
+
+if (status === "paid") {
+
+acc.paidInvoices += 1;
+
+acc.totalPaidAmount += total;
+
+} else if (status === "overdue") {
+
+acc.overdueInvoices += 1;
+
+acc.totalOverdueAmount += total - paid;
+
+} else if (status === "partial") {
+
+acc.partialPayments += 1;
+
+acc.totalPartialAmount += paid;
+
+} else {
+
+acc.unpaidInvoices += 1;
+
+acc.totalUnpaidAmount += total;
+
+}
+
+
+
+return acc;
+
+},
+
+{
+
+paidInvoices: 0,
+
+unpaidInvoices: 0,
+
+overdueInvoices: 0,
+
+partialPayments: 0,
+
+totalPaidAmount: 0,
+
+totalUnpaidAmount: 0,
+
+totalOverdueAmount: 0,
+
+totalPartialAmount: 0,
+
+}
+
+);
+
+
+
+return {
+
+propertyId: prop.id,
+
+propertyName: prop.name,
+
+location: prop.location,
+
+totalUnits,
+
+occupiedUnits,
+
+vacantUnits,
+
+units,
+
+financials,
+
+};
+
+});
+
+
+
+return NextResponse.json({ properties: formattedProperties });
+
+} catch (err: any) {
+
+console.error("GET properties-overview unhandled error:", err);
+
+return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
+
+}
+
+}
+
+
+
+export async function POST(request: NextRequest) {
+
+try {
+
+const { user, supabase } = await getAuthenticatedUserAndClient(request);
+
+
+
+if (!user || !supabase) {
+
+return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
+
+}
+
+
+
+const body = await request.json();
+
+const {
+
+propertyName,
+
+location,
+
+unitNumber,
+
+rentAmount,
+
+garbageFee,
+
+parkingFee,
+
+} = body;
+
+
+
+if (!propertyName || !unitNumber || !rentAmount) {
+
+return NextResponse.json(
+
+{ error: "Property name, unit number, and rent amount are required." },
+
+{ status: 400 }
+
+);
+
+}
+
+let propertyId: string;
+
+const { data: existingProp } = await supabase.from("properties").select("id")
+
+.eq("owner_id", user.id)
+
+.ilike("name", propertyName)
+
+.maybeSingle();
+
+
+
+if (existingProp) {
+
+propertyId = existingProp.id;
+
+} else {
+
+const { data: newProp, error: propErr } = await supabase
+
+.from("properties")
+
+.insert({
+
+owner_id: user.id,
+
+name: propertyName,
+
+location: location || "",
+
+})
+
+.select("id")
+
+.single();
+
+
+
+if (propErr || !newProp) {
+
+return NextResponse.json(
+
+{ error: propErr?.message || "Failed to create property." },
+
+{ status: 500 }
+
+);
+
+}
+
+propertyId = newProp.id;
+
+}
+
+
+
+const { error: unitErr } = await supabase.from("units").insert({
+
+property_id: propertyId,
+
+unit_number: unitNumber,
+
+rent_amount: Number(rentAmount),
+
+garbage_fee: garbageFee === null || garbageFee === undefined ? null : Number(garbageFee),
+
+parking_fee: parkingFee === null || parkingFee === undefined ? null : Number(parkingFee),
+
+is_occupied: false,
+
+});
+
+
+
+if (unitErr) {
+
+return NextResponse.json({ error: unitErr.message }, { status: 500 });
+
+}
+
+
+
+return NextResponse.json({ success: true, propertyId });
+
+} catch (err: any) {
+
+return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
+
+}
+
+}
+
+
+
+export async function PUT(request: NextRequest) {
+
+try {
+
+const { user, supabase } = await getAuthenticatedUserAndClient(request);
+
+
+
+if (!user || !supabase) {
+
+return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
+
+}
+
+
+
+const body = await request.json();
+
+const {
+
+unitId,
+
+unitNumber,
+
+rentAmount,
+
+garbageFee,
+
+parkingFee,
+
+} = body;
+
+
+
+if (!unitId) {
+
+return NextResponse.json({ error: "Unit ID is required for updates." }, { status: 400 });
+
+}
+
+
+
+const { data: unit, error: fetchErr } = await supabase
+
+.from("units")
+
+.select("id, properties!inner(owner_id)")
+
+.eq("id", unitId)
+
+.single();
+
+
+
+if (fetchErr || !unit) {
+
+return NextResponse.json({ error: "Unit not found or access denied." }, { status: 404 });
+
+}
+
+
+
+const { error: updateErr } = await supabase
+
+.from("units")
+
+.update({
+
+unit_number: unitNumber,
+
+rent_amount: Number(rentAmount),
+
+garbage_fee: garbageFee === null || garbageFee === undefined ? null : Number(garbageFee),
+
+parking_fee: parkingFee === null || parkingFee === undefined ? null : Number(parkingFee),
+
+})
+
+.eq("id", unitId);
+
+
+
+if (updateErr) {
+
+return NextResponse.json({ error: updateErr.message }, { status: 500 });
+
+}
+
+
+
+return NextResponse.json({ success: true });
+
+} catch (err: any) {
+
+return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
+
+}
+
 }
