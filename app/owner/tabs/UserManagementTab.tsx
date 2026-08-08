@@ -21,14 +21,13 @@ export const UserManagementTab: React.FC = () => {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   const fetchInitialData = async () => {
+    setFetching(true);
+    setFetchError(null);
+    const errors: string[] = [];
+
+    // Path 1: Fetch Properties Overview (GET /owner/api/properties-overview)
     try {
-      setFetching(true);
-      setFetchError(null);
-
-      // Fetch properties directly from your working properties-overview endpoint
       const propsRes = await fetch('/owner/api/properties-overview', { cache: 'no-store' });
-      const usersRes = await fetch('/owner/api/invite-user', { cache: 'no-store' });
-
       if (propsRes.ok) {
         const propsData = await propsRes.json();
         const loadedProps = (propsData.properties || []).map((p: any) => ({
@@ -43,19 +42,30 @@ export const UserManagementTab: React.FC = () => {
           setSelectedPropertyId(loadedProps[0].id);
         }
       } else {
-        throw new Error('Failed to load property overview data.');
+        errors.push(`Properties API failed (${propsRes.status})`);
       }
+    } catch (err: any) {
+      errors.push(`Properties network error: ${err.message}`);
+    }
 
+    // Path 2: Fetch Managed Users Directory (GET /owner/api/invite-user)
+    try {
+      const usersRes = await fetch('/owner/api/invite-user', { cache: 'no-store' });
       if (usersRes.ok) {
         const usersData = await usersRes.json();
         setUsers(usersData.users || []);
+      } else {
+        errors.push(`Users API failed (${usersRes.status})`);
       }
     } catch (err: any) {
-      console.error('Failed to load user management data:', err);
-      setFetchError('Notice: Could not sync current records. You can still submit the form below.');
-    } finally {
-      setFetching(false);
+      errors.push(`Users directory network error: ${err.message}`);
     }
+
+    if (errors.length > 0) {
+      setFetchError(errors.join(' | '));
+    }
+
+    setFetching(false);
   };
 
   useEffect(() => {
@@ -70,6 +80,7 @@ export const UserManagementTab: React.FC = () => {
     setFeedback(null);
 
     try {
+      // Path 2: External Email & Database Endpoint (POST /owner/api/invite-user)
       const res = await fetch('/owner/api/invite-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,8 +94,15 @@ export const UserManagementTab: React.FC = () => {
         }),
       });
 
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to send invite.');
+      const contentType = res.headers.get('content-type');
+      let result: any = {};
+      if (contentType && contentType.includes('application/json')) {
+        result = await res.json();
+      }
+
+      if (!res.ok) {
+        throw new Error(result.error || `Request failed with status ${res.status}`);
+      }
 
       setFeedback({
         type: 'success',
