@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Shield, Home, Mail, CheckCircle, Clock, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { UserPlus, Shield, Home, Mail, CheckCircle, Clock, Loader2, AlertCircle, RefreshCw, Briefcase } from 'lucide-react';
 import { UserRole, PropertyOption, ManagedUser } from '../types';
 
 export const UserManagementTab: React.FC = () => {
@@ -16,7 +16,7 @@ export const UserManagementTab: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<UserRole>('tenant');
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
-  const [selectedUnit, setSelectedUnit] = useState<string>('');
+  const [selectedUnit, setSelectedUnit] = useState<string>('N/A');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
@@ -25,20 +25,17 @@ export const UserManagementTab: React.FC = () => {
       setFetching(true);
       setFetchError(null);
 
-      // Attempt endpoint fetches with fallback between /owner and /property-manager
-      let propsRes = await fetch('/owner/api/properties', { cache: 'no-store' });
-      if (!propsRes.ok) {
-        propsRes = await fetch('/property-manager/api/properties', { cache: 'no-store' });
-      }
-
-      let usersRes = await fetch('/owner/api/users', { cache: 'no-store' });
-      if (!usersRes.ok) {
-        usersRes = await fetch('/property-manager/api/users', { cache: 'no-store' });
-      }
+      // Fetch owner properties only
+      const propsRes = await fetch('/owner/api/properties-overview', { cache: 'no-store' });
+      const usersRes = await fetch('/owner/api/invite-user', { cache: 'no-store' });
 
       if (propsRes.ok) {
         const propsData = await propsRes.json();
-        const loadedProps: PropertyOption[] = propsData.properties || propsData || [];
+        const loadedProps = (propsData.properties || []).map((p: any) => ({
+          id: p.propertyId,
+          name: p.propertyName,
+          units: (p.units || []).map((u: any) => u.unit_number || u),
+        }));
         setAvailableProperties(loadedProps);
         if (loadedProps.length > 0 && !selectedPropertyId) {
           setSelectedPropertyId(loadedProps[0].id);
@@ -47,7 +44,7 @@ export const UserManagementTab: React.FC = () => {
 
       if (usersRes.ok) {
         const usersData = await usersRes.json();
-        setUsers(usersData.users || usersData || []);
+        setUsers(usersData.users || []);
       }
     } catch (err) {
       console.error('Failed to load user management data from database:', err);
@@ -69,7 +66,7 @@ export const UserManagementTab: React.FC = () => {
     setFeedback(null);
 
     try {
-      let res = await fetch('/owner/api/invite-user', {
+      const res = await fetch('/owner/api/invite-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -78,24 +75,9 @@ export const UserManagementTab: React.FC = () => {
           phone,
           role,
           property_id: selectedPropertyId,
-          unit_number: role === 'tenant' ? selectedUnit : undefined,
+          unit_number: selectedUnit === 'N/A' || !selectedUnit ? undefined : selectedUnit,
         }),
       });
-
-      if (!res.ok) {
-        res = await fetch('/property-manager/api/invite-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            full_name: fullName,
-            email,
-            phone,
-            role,
-            property_id: selectedPropertyId,
-            unit_number: role === 'tenant' ? selectedUnit : undefined,
-          }),
-        });
-      }
 
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed to send invite.');
@@ -109,7 +91,7 @@ export const UserManagementTab: React.FC = () => {
       setFullName('');
       setEmail('');
       setPhone('');
-      setSelectedUnit('');
+      setSelectedUnit('N/A');
       fetchInitialData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong while sending the invitation.';
@@ -131,7 +113,7 @@ export const UserManagementTab: React.FC = () => {
             <div>
               <h2 className="text-xl font-bold text-gray-800">Add & Assign New User</h2>
               <p className="text-sm text-gray-500">
-                Invite a Caretaker or Tenant to your properties. An automated verification link will be emailed to set up their password.
+                Invite a Property Manager, Caretaker, or Tenant. An automated verification link will be emailed to set up their password.
               </p>
             </div>
           </div>
@@ -216,6 +198,7 @@ export const UserManagementTab: React.FC = () => {
               >
                 <option value="tenant">Tenant</option>
                 <option value="caretaker">Caretaker</option>
+                <option value="property_manager">Property Manager</option>
               </select>
             </div>
 
@@ -228,7 +211,7 @@ export const UserManagementTab: React.FC = () => {
                 value={selectedPropertyId}
                 onChange={(e) => {
                   setSelectedPropertyId(e.target.value);
-                  setSelectedUnit('');
+                  setSelectedUnit('N/A');
                 }}
                 className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
               >
@@ -241,24 +224,22 @@ export const UserManagementTab: React.FC = () => {
               </select>
             </div>
 
-            {role === 'tenant' && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Assign Unit</label>
-                <select
-                  required={role === 'tenant'}
-                  value={selectedUnit}
-                  onChange={(e) => setSelectedUnit(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                >
-                  <option value="">-- Select Unit --</option>
-                  {currentProperty?.units?.map((unit) => (
-                    <option key={unit} value={unit}>
-                      {unit}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Always available unit selection field with explicit N/A choice */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Assign Unit</label>
+              <select
+                value={selectedUnit}
+                onChange={(e) => setSelectedUnit(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              >
+                <option value="N/A">N/A (Not Living in Unit / Building Level)</option>
+                {currentProperty?.units?.map((unit) => (
+                  <option key={unit} value={unit}>
+                    Unit {unit}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <button
@@ -287,7 +268,7 @@ export const UserManagementTab: React.FC = () => {
           <div>
             <h3 className="text-lg font-bold text-gray-800">Managed Users & Roles</h3>
             <p className="text-sm text-gray-500">
-              Caretakers and Tenants currently assigned to your properties in the database.
+              Property Managers, Caretakers, and Tenants assigned to your properties in the database.
             </p>
           </div>
           {fetching && <Loader2 className="animate-spin text-blue-600" size={18} />}
@@ -295,7 +276,7 @@ export const UserManagementTab: React.FC = () => {
 
         {users.length === 0 ? (
           <div className="p-12 text-center text-gray-500 text-sm">
-            No registered caretakers or tenants found in the database.
+            No registered users found for your properties in the database.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -318,7 +299,11 @@ export const UserManagementTab: React.FC = () => {
                       <div className="text-xs text-gray-500">{usr.email} | {usr.phone}</div>
                     </td>
                     <td className="p-4">
-                      {usr.role === 'caretaker' ? (
+                      {usr.role === 'property_manager' ? (
+                        <span className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-medium">
+                          <Briefcase size={12} /> Property Manager
+                        </span>
+                      ) : usr.role === 'caretaker' ? (
                         <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-xs px-2.5 py-1 rounded-full font-medium">
                           <Shield size={12} /> Caretaker
                         </span>
@@ -329,7 +314,7 @@ export const UserManagementTab: React.FC = () => {
                       )}
                     </td>
                     <td className="p-4 text-gray-700 font-medium">{usr.property_name || 'N/A'}</td>
-                    <td className="p-4 text-gray-600">{usr.unit_number || 'N/A (All Building)'}</td>
+                    <td className="p-4 text-gray-600">{usr.unit_number || 'N/A (Building Level)'}</td>
                     <td className="p-4">
                       {usr.status === 'active' ? (
                         <span className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-medium">

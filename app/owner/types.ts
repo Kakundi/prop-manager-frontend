@@ -8,7 +8,7 @@ export type OwnerTab =
   | 'unassigned-payments'
   | 'subscription';
 
-export type UserRole = 'tenant' | 'caretaker' | 'owner';
+export type UserRole = 'tenant' | 'caretaker' | 'owner' | 'property_manager';
 
 export interface PropertyOption {
   id: string;
@@ -22,6 +22,7 @@ export interface ManagedUser {
   email: string;
   phone: string;
   role: UserRole;
+  property_id?: string;
   property_name?: string;
   unit_number?: string;
   status: 'active' | 'pending';
