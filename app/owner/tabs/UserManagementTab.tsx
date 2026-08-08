@@ -25,7 +25,7 @@ export const UserManagementTab: React.FC = () => {
       setFetching(true);
       setFetchError(null);
 
-      // 1. Fetch properties directly from your working properties-overview endpoint
+      // Fetch properties directly from your working properties-overview endpoint
       const propsRes = await fetch('/owner/api/properties-overview', { cache: 'no-store' });
       const usersRes = await fetch('/owner/api/invite-user', { cache: 'no-store' });
 
@@ -34,7 +34,9 @@ export const UserManagementTab: React.FC = () => {
         const loadedProps = (propsData.properties || []).map((p: any) => ({
           id: p.propertyId,
           name: p.propertyName,
-          units: (p.units || []).map((u: any) => String(u.unit_number || u)),
+          units: Array.isArray(p.units)
+            ? p.units.map((u: any) => String(u.unit_number || ''))
+            : [],
         }));
         setAvailableProperties(loadedProps);
         if (loadedProps.length > 0 && !selectedPropertyId) {
