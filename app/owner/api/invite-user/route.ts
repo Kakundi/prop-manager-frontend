@@ -3,13 +3,16 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabaseServer';
 import { createClient } from '@supabase/supabase-js';
 
+// Force dynamic server route execution on Vercel (bypasses static caching)
+export const dynamic = 'force-dynamic';
+
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
     throw new Error(
-      `Missing Env Vars: URL=${!!url}, SERVICE_ROLE=${!!serviceKey}`
+      `Vercel Environment Missing: NEXT_PUBLIC_SUPABASE_URL=${!!url}, SUPABASE_SERVICE_ROLE_KEY=${!!serviceKey}`
     );
   }
 
@@ -23,7 +26,7 @@ export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
 
-    // 1. Authenticate caller session
+    // 1. Get authenticated user session from request cookies
     const {
       data: { user },
       error: authError,
@@ -31,53 +34,48 @@ export async function GET() {
 
     if (authError || !user) {
       return NextResponse.json(
-        { error: 'Unauthorized: No active session' },
+        { error: 'Unauthorized: Session missing or invalid' },
         { status: 401 }
       );
     }
 
-    const admin = getAdminClient();
+    let admin;
+    try {
+      admin = getAdminClient();
+    } catch (envErr: any) {
+      return NextResponse.json({ error: envErr.message }, { status: 500 });
+    }
 
-    // 2. Fetch properties owned by logged-in owner
-    // Tries 'owner_id' first, then falls back gracefully if column differs
+    // 2. Query properties owned by this user
     let ownerProps: any[] = [];
-    let propsError: any = null;
-
+    
+    // Query 1: standard owner_id match
     const res1 = await admin
       .from('properties')
       .select('id, property_name')
       .eq('owner_id', user.id);
 
-    if (res1.error) {
-      // Fallback query if owner_id isn't the column name
+    if (!res1.error && res1.data) {
+      ownerProps = res1.data;
+    } else {
+      // Fallback Query 2: user_id match
       const res2 = await admin
         .from('properties')
         .select('id, property_name')
         .eq('user_id', user.id);
 
       ownerProps = res2.data || [];
-      propsError = res2.error;
-    } else {
-      ownerProps = res1.data || [];
-    }
-
-    if (propsError) {
-      console.error('Properties query failed:', propsError.message);
-      return NextResponse.json(
-        { error: `Database error (properties): ${propsError.message}` },
-        { status: 500 }
-      );
     }
 
     const propertyIds = ownerProps.map((p) => p.id);
-    const propMap = new Map(ownerProps.map((p) => [p.id, p.property_name]));
+    const propMap = new Map(ownerProps.map((p) => [p.id, p.property_name || p.name || 'N/A']));
 
-    // Return empty list if this owner has no properties yet
+    // Return empty list if owner has no registered properties
     if (propertyIds.length === 0) {
       return NextResponse.json({ users: [] }, { status: 200 });
     }
 
-    // 3. Fetch profiles assigned to those properties
+    // 3. Fetch user profiles assigned to these property IDs
     const { data: users, error: usersError } = await admin
       .from('profiles')
       .select('*')
@@ -85,14 +83,13 @@ export async function GET() {
       .order('created_at', { ascending: false });
 
     if (usersError) {
-      console.error('Profiles query failed:', usersError.message);
       return NextResponse.json(
-        { error: `Database error (profiles): ${usersError.message}` },
+        { error: `Database Error (profiles): ${usersError.message}` },
         { status: 500 }
       );
     }
 
-    // 4. Format payload for UI table
+    // 4. Format profiles for UI display
     const formattedUsers = (users || []).map((usr: any) => ({
       id: usr.id,
       full_name: usr.full_name || usr.name || 'N/A',
@@ -109,7 +106,6 @@ export async function GET() {
 
     return NextResponse.json({ users: formattedUsers }, { status: 200 });
   } catch (error: any) {
-    console.error('API Error:', error.message);
     return NextResponse.json(
       { error: error.message || 'Internal Server Error' },
       { status: 500 }
@@ -117,7 +113,7 @@ export async function GET() {
   }
 }
 
-// POST: Process user invitation
+// POST: Process user invitation and trigger email verification
 export async function POST(request: Request) {
   try {
     const supabase = await createServerSupabaseClient();
@@ -159,7 +155,7 @@ export async function POST(request: Request) {
       throw new Error(`Auth invitation failed: ${inviteError.message}`);
     }
 
-    // 2. Upsert profile record
+    // 2. Insert user record into profiles table
     const { error: dbError } = await admin.from('profiles').insert([
       {
         id: authData.user.id,
