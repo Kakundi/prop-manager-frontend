@@ -1,145 +1,126 @@
-import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-// Admin Client with Service Role Key for elevated auth actions
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-async function getAuthenticatedOwner() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {}
-        },
-      },
-    }
-  );
-
-  const { data: { user } } = await supabase.auth.getUser();
-  return { user, supabase };
-}
-
-// GET: Retrieve all users assigned to the logged-in owner's properties
 export async function GET() {
   try {
-    const { user, supabase } = await getAuthenticatedOwner();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
-    }
+    const cookieStore = await cookies();
 
-    // Get properties owned by this owner
-    const { data: ownerProps } = await supabase
-      .from("properties")
-      .select("id, name")
-      .eq("owner_id", user.id);
-
-    if (!ownerProps || ownerProps.length === 0) {
-      return NextResponse.json({ users: [] });
-    }
-
-    const propIds = ownerProps.map((p) => p.id);
-
-    // Fetch user profiles assigned to those properties
-    const { data: profiles, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, email, phone, role, property_id, unit_number, email_confirmed_at, created_at")
-      .in("property_id", propIds);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    const propMap = new Map(ownerProps.map((p) => [p.id, p.name]));
-
-    const users = (profiles || []).map((usr) => ({
-      id: usr.id,
-      full_name: usr.full_name,
-      email: usr.email,
-      phone: usr.phone,
-      role: usr.role,
-      property_id: usr.property_id,
-      property_name: propMap.get(usr.property_id) || "N/A",
-      unit_number: usr.unit_number || "N/A (All Building)",
-      status: usr.email_confirmed_at ? "active" : "pending",
-      invited_at: new Date(usr.created_at).toLocaleDateString(),
-    }));
-
-    return NextResponse.json({ users });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
-  }
-}
-
-// POST: Trigger invitation link & insert profile record
-export async function POST(request: NextRequest) {
-  try {
-    const { user } = await getAuthenticatedOwner();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { full_name, email, phone, role, property_id, unit_number } = body;
-
-    if (!full_name || !email || !role || !property_id) {
-      return NextResponse.json(
-        { error: "Full name, email, role, and property selection are required." },
-        { status: 400 }
-      );
-    }
-
-    // Send invitation email via Supabase Auth Admin
-    const { data: authData, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      email,
+    // Create server-side Supabase client using stored cookies
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
-        redirectTo: "http://localhost:3000/auth/confirm-password",
-        data: {
-          full_name,
-          phone,
-          role,
-          property_id,
-          unit_number: unit_number || null,
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) =>
+                cookieStore.set(name, value, options)
+              );
+            } catch {
+              // Ignore in Server Component/API Route context if headers are sent
+            }
+          },
         },
       }
     );
 
-    if (inviteErr) {
-      return NextResponse.json({ error: inviteErr.message }, { status: 500 });
+    // Verify user session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Unauthorized access. Please log in again." },
+        { status: 401 }
+      );
     }
 
-    // Insert user record into public profiles table linked to the property
-    const { error: profileErr } = await supabaseAdmin.from("profiles").upsert({
-      id: authData.user.id,
-      full_name,
-      email,
-      phone,
-      role,
-      property_id,
-      unit_number: unit_number || null,
-      created_at: new Date().toISOString(),
+    // 1. Fetch properties owned by this specific owner
+    const { data: properties, error: propsError } = await supabase
+      .from("properties")
+      .select("id, name, location, created_at")
+      .eq("owner_id", user.id);
+
+    if (propsError) {
+      return NextResponse.json({ error: propsError.message }, { status: 500 });
+    }
+
+    if (!properties || properties.length === 0) {
+      return NextResponse.json({ properties: [] });
+    }
+
+    const propertyIds = properties.map((p) => p.id);
+
+    // 2. Fetch all units associated with these properties
+    const { data: units, error: unitsError } = await supabase
+      .from("units")
+      .select("id, property_id, unit_number, status, rent_amount")
+      .in("property_id", propertyIds);
+
+    if (unitsError) {
+      console.warn("Notice: Could not fetch units directly:", unitsError.message);
+    }
+
+    // 3. Fetch financial invoices for metrics calculations
+    const { data: invoices, error: invError } = await supabase
+      .from("invoices")
+      .select("id, property_id, amount, status")
+      .in("property_id", propertyIds);
+
+    if (invError) {
+      console.warn("Notice: Could not fetch invoices:", invError.message);
+    }
+
+    // Map units and invoices back to their respective properties
+    const propertyOverview = properties.map((prop) => {
+      const propUnits = (units || []).filter((u) => u.property_id === prop.id);
+      const propInvoices = (invoices || []).filter((i) => i.property_id === prop.id);
+
+      const totalUnits = propUnits.length;
+      const occupiedUnits = propUnits.filter((u) => u.status === "occupied").length;
+      const vacantUnits = totalUnits - occupiedUnits;
+      const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+
+      const totalExpectedIncome = propUnits.reduce(
+        (sum, u) => sum + Number(u.rent_amount || 0),
+        0
+      );
+
+      const paidInvoicesAmount = propInvoices
+        .filter((i) => i.status === "paid")
+        .reduce((sum, i) => sum + Number(i.amount || 0), 0);
+
+      const pendingInvoicesAmount = propInvoices
+        .filter((i) => i.status === "unpaid" || i.status === "pending")
+        .reduce((sum, i) => sum + Number(i.amount || 0), 0);
+
+      return {
+        propertyId: prop.id,
+        propertyName: prop.name,
+        location: prop.location || "N/A",
+        units: propUnits,
+        totalUnits,
+        occupiedUnits,
+        vacantUnits,
+        occupancyRate,
+        totalExpectedIncome,
+        paidInvoicesAmount,
+        pendingInvoicesAmount,
+      };
     });
 
-    if (profileErr) {
-      console.warn("Profile table insert warning:", profileErr.message);
-    }
-
-    return NextResponse.json({ success: true, user: authData.user });
+    return NextResponse.json({ properties: propertyOverview });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
+    console.error("Dashboard Overview Endpoint Error:", err);
+    return NextResponse.json(
+      { error: err.message || "An unexpected error occurred." },
+      { status: 500 }
+    );
   }
 }
