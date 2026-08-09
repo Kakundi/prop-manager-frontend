@@ -7,6 +7,8 @@ export async function GET(request: Request) {
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/auth/accept-invite';
 
+  console.log('[AUTH_CALLBACK] Triggered. Code present:', !!code);
+
   if (code) {
     const cookieStore = await cookies();
     const supabase = createServerClient(
@@ -30,10 +32,16 @@ export async function GET(request: Request) {
       }
     );
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
     if (!error) {
+      console.log('[AUTH_CALLBACK] Session created successfully for user:', data.user?.email);
       return NextResponse.redirect(`${origin}${next}`);
     }
+
+    console.error('[AUTH_CALLBACK] Code exchange failed:', error.message);
+  } else {
+    console.error('[AUTH_CALLBACK] No code parameter found in callback URL.');
   }
 
   return NextResponse.redirect(`${origin}/auth/accept-invite?error=Authentication+failed`);
