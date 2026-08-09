@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 
-export default function AcceptInvitePage() {
+function AcceptInviteForm() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -26,7 +27,6 @@ export default function AcceptInvitePage() {
       return;
     }
 
-    // Verify session established by callback route
     async function checkSession() {
       const {
         data: { session },
@@ -44,90 +44,121 @@ export default function AcceptInvitePage() {
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
 
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
-      setLoading(false);
       return;
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters long.');
-      setLoading(false);
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long.');
       return;
     }
 
-    // Set the password for the currently authenticated invited user
-    const { error: updateError } = await supabase.auth.updateUser({
+    setLoading(true);
+    setError(null);
+
+    const {
+      data: { user },
+      error: updateError,
+    } = await supabase.auth.updateUser({
       password,
     });
 
-    if (updateError) {
-      setError(updateError.message);
+    if (updateError || !user) {
+      setError(updateError?.message || 'Failed to set password.');
       setLoading(false);
       return;
     }
 
-    // Password updated successfully -> redirect to dashboard
-    router.push('/dashboard');
+    // Mark profile status as active
+    await supabase
+      .from('profiles')
+      .update({ status: 'active' })
+      .eq('id', user.id);
+
+    // Role-based route redirection
+    const userRole = user.user_metadata?.role || 'tenant';
+    const redirectMap: Record<string, string> = {
+      owner: '/owner/dashboard',
+      property_manager: '/manager/dashboard',
+      caretaker: '/caretaker/dashboard',
+      tenant: '/tenant/dashboard',
+    };
+
+    router.push(redirectMap[userRole] || '/dashboard');
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-md border border-gray-100">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Complete Account Setup</h1>
+    <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md border border-gray-100">
+      <div className="text-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">PropManager HQ</h1>
+        <p className="text-sm text-gray-600 mt-1">Complete account setup & set your password</p>
         {userEmail && (
-          <p className="text-sm text-gray-600 mb-6">
-            Setting up account for <span className="font-semibold">{userEmail}</span>
-          </p>
-        )}
-
-        {error ? (
-          <div className="p-4 mb-4 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100">
-            {error}
-          </div>
-        ) : (
-          <form onSubmit={handleSetPassword} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                New Password
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !userEmail}
-              className="w-full py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-            >
-              {loading ? 'Saving Password...' : 'Save Password & Enter App'}
-            </button>
-          </form>
+          <p className="text-xs text-blue-600 font-medium mt-1.5">{userEmail}</p>
         )}
       </div>
+
+      {error ? (
+        <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-xs font-medium text-center">
+          {error}
+        </div>
+      ) : (
+        <form onSubmit={handleSetPassword} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                placeholder="••••••••"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs font-semibold text-gray-500 hover:text-gray-700"
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              minLength={6}
+              placeholder="••••••••"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || !userEmail}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm disabled:opacity-50 transition"
+          >
+            {loading ? 'Activating Account...' : 'Set Password & Access Portal'}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+export default function AcceptInvitePage() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center p-4">
+      <Suspense fallback={<div className="text-sm text-gray-500">Loading form...</div>}>
+        <AcceptInviteForm />
+      </Suspense>
     </div>
   );
 }
