@@ -124,23 +124,22 @@ export async function POST(request: Request) {
 
     const admin = getSupabaseAdmin();
 
-    // 3. Create user / Invite via Supabase Admin Auth
-    const { data: newUser, error: createError } = await admin.auth.admin.createUser({
-      email,
-      email_confirm: false,
-      user_metadata: {
-        full_name,
-        phone,
-        role,
-      },
-    });
+    // 3. Invite user via Supabase Auth (Sends setup link, avoids createUser trigger collision)
+    const { data: inviteData, error: inviteError } =
+      await admin.auth.admin.inviteUserByEmail(email, {
+        data: {
+          full_name,
+          phone,
+          role,
+        },
+      });
 
-    if (createError) {
-      console.error('[INVITE_USER_POST] Auth Create Error:', createError.message);
-      return NextResponse.json({ error: createError.message }, { status: 400 });
+    if (inviteError) {
+      console.error('[INVITE_USER_POST] Auth Invite Error:', inviteError.message);
+      return NextResponse.json({ error: inviteError.message }, { status: 400 });
     }
 
-    const createdUserId = newUser.user.id;
+    const createdUserId = inviteData.user.id;
 
     // 4. Assign role on properties table if property_manager or caretaker
     if (property_id) {
@@ -164,11 +163,11 @@ export async function POST(request: Request) {
       email,
       phone,
       role,
-      unit_number: unit_number !== 'N/A' ? unit_number : null,
+      unit_number: unit_number && unit_number !== 'N/A' ? unit_number : null,
     });
 
     return NextResponse.json(
-      { message: 'User invited and created successfully', user: newUser.user },
+      { message: 'User invited and created successfully', user: inviteData.user },
       { status: 201 }
     );
   } catch (error: any) {
