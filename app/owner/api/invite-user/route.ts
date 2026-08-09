@@ -5,6 +5,48 @@ import { getSiteUrl } from '@/lib/utils/url';
 
 export const dynamic = 'force-dynamic';
 
+// GET Handler: Handles "Refresh Directory" and fetching managed user profiles
+export async function GET() {
+  try {
+    const supabase = await createServerSupabaseClient();
+
+    // 1. Authenticate requesting user session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Session token missing or expired.' },
+        { status: 401 }
+      );
+    }
+
+    const admin = getSupabaseAdmin();
+
+    // 2. Query directory profiles from database
+    const { data: profiles, error: fetchError } = await admin
+      .from('profiles')
+      .select('id, full_name, email, phone, role, status, created_at')
+      .order('created_at', { ascending: false });
+
+    if (fetchError) {
+      console.error('[INVITE_USER_GET] Fetch Profiles Error:', fetchError.message);
+      return NextResponse.json({ error: fetchError.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ users: profiles }, { status: 200 });
+  } catch (error: any) {
+    console.error('[INVITE_USER_GET] Server Crash:', error.message);
+    return NextResponse.json(
+      { error: error.message || 'Unhandled Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST Handler: Handles sending user invites and creating profiles
 export async function POST(request: Request) {
   try {
     const supabase = await createServerSupabaseClient();
