@@ -1,104 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabaseServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { getSiteUrl } from '@/lib/utils/url';
 
 export const dynamic = 'force-dynamic';
 
-// --- GET HANDLER (For listing managed users) ---
-export async function GET() {
-  try {
-    const supabase = await createServerSupabaseClient();
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Session token missing or expired.' },
-        { status: 401 }
-      );
-    }
-
-    const admin = getSupabaseAdmin();
-
-    const { data: ownerProps, error: propsError } = await admin
-      .from('properties')
-      .select('id, name, property_manager_id, caretaker_id')
-      .eq('owner_id', user.id);
-
-    if (propsError) {
-      console.error('[INVITE_USER_API] Properties DB Error:', propsError.message);
-      return NextResponse.json(
-        { error: `Properties query error: ${propsError.message}` },
-        { status: 500 }
-      );
-    }
-
-    const assignedProfileIds = new Set<string>();
-    const profilePropertyMap = new Map<string, string>();
-
-    (ownerProps || []).forEach((p: any) => {
-      if (p.property_manager_id) {
-        assignedProfileIds.add(p.property_manager_id);
-        profilePropertyMap.set(p.property_manager_id, p.name);
-      }
-      if (p.caretaker_id) {
-        assignedProfileIds.add(p.caretaker_id);
-        profilePropertyMap.set(p.caretaker_id, p.name);
-      }
-    });
-
-    const userIdsToFetch = Array.from(assignedProfileIds);
-
-    if (userIdsToFetch.length === 0) {
-      return NextResponse.json({ users: [] }, { status: 200 });
-    }
-
-    const { data: users, error: usersError } = await admin
-      .from('profiles')
-      .select('*')
-      .in('id', userIdsToFetch);
-
-    if (usersError) {
-      console.error('[INVITE_USER_API] Profiles DB Error:', usersError.message);
-      return NextResponse.json(
-        { error: `Profiles query error: ${usersError.message}` },
-        { status: 500 }
-      );
-    }
-
-    const formattedUsers = (users || []).map((usr: any) => ({
-      id: usr.id,
-      full_name: usr.full_name || usr.name || 'N/A',
-      email: usr.email || 'N/A',
-      phone: usr.phone || 'N/A',
-      role: usr.role || 'tenant',
-      property_name: profilePropertyMap.get(usr.id) || 'N/A',
-      unit_number: usr.unit_number || 'N/A',
-      status: usr.status || 'pending',
-      invited_at: usr.created_at
-        ? new Date(usr.created_at).toLocaleDateString()
-        : 'N/A',
-    }));
-
-    return NextResponse.json({ users: formattedUsers }, { status: 200 });
-  } catch (error: any) {
-    console.error('[INVITE_USER_API] Server Crash:', error.message);
-    return NextResponse.json(
-      { error: error.message || 'Unhandled Internal Server Error' },
-      { status: 500 }
-    );
-  }
-}
-
-// --- POST HANDLER (For inviting / adding a new user) ---
 export async function POST(request: Request) {
   try {
     const supabase = await createServerSupabaseClient();
 
-    // 1. Authenticate landlord session
+    // 1. Authenticate landlord / admin session
     const {
       data: { user },
       error: authError,
@@ -111,9 +22,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Parse body payloads
+    // 2. Parse request body
     const body = await request.json();
-    const { full_name, email, phone, role, property_id, unit_number } = body;
+    const { full_name, email, phone, role, property_id } = body;
 
     if (!email || !full_name || !role) {
       return NextResponse.json(
@@ -123,11 +34,9 @@ export async function POST(request: Request) {
     }
 
     const admin = getSupabaseAdmin();
+    const siteUrl = getSiteUrl();
 
-    // Dynamically derive site URL for localhost or production
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-
-    // 3. Invite user via Supabase Auth directing through the callback route for PKCE exchange
+    // 3. Invite user via Supabase Auth directing to the PKCE callback route
     const { data: inviteData, error: inviteError } =
       await admin.auth.admin.inviteUserByEmail(email, {
         redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invite`,
@@ -160,18 +69,25 @@ export async function POST(request: Request) {
       }
     }
 
-    // 5. Update or insert into profiles table
-    await admin.from('profiles').upsert({
+    // 5. Upsert into profiles table (only columns that belong to profiles)
+    const { error: profileError } = await admin.from('profiles').upsert({
       id: createdUserId,
       full_name,
       email,
       phone,
       role,
-      unit_number: unit_number && unit_number !== 'N/A' ? unit_number : null,
     });
 
+    if (profileError) {
+      console.error('[INVITE_USER_POST] Profile Upsert Error:', profileError.message);
+      return NextResponse.json(
+        { error: `User created, but profile update failed: ${profileError.message}` },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { message: 'User invited and created successfully', user: inviteData.user },
+      { message: 'User invited successfully', user: inviteData.user },
       { status: 201 }
     );
   } catch (error: any) {

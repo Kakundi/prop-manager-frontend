@@ -7,8 +7,6 @@ export async function GET(request: Request) {
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/auth/accept-invite';
 
-  console.log('[AUTH_CALLBACK] Triggered. Code present:', !!code);
-
   if (code) {
     const cookieStore = await cookies();
     const supabase = createServerClient(
@@ -25,24 +23,26 @@ export async function GET(request: Request) {
                 cookieStore.set(name, value, options)
               );
             } catch {
-              // Server component read-only safety catch
+              // Safe catch when invoked from Server Components
             }
           },
         },
       }
     );
 
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    // Exchange the single-use authorization code for an active session
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      console.log('[AUTH_CALLBACK] Session created successfully for user:', data.user?.email);
+      // Forward the user to the target destination with active session cookies attached
       return NextResponse.redirect(`${origin}${next}`);
     }
 
-    console.error('[AUTH_CALLBACK] Code exchange failed:', error.message);
+    console.error('[PKCE_CALLBACK_ERROR] Code exchange failed:', error.message);
   } else {
-    console.error('[AUTH_CALLBACK] No code parameter found in callback URL.');
+    console.error('[PKCE_CALLBACK_ERROR] No authorization code found in request params.');
   }
 
+  // Fallback redirect if token exchange fails
   return NextResponse.redirect(`${origin}/auth/accept-invite?error=Authentication+failed`);
 }
