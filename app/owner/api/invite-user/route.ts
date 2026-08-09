@@ -124,9 +124,13 @@ export async function POST(request: Request) {
 
     const admin = getSupabaseAdmin();
 
-    // 3. Invite user via Supabase Auth (Sends setup link, avoids createUser trigger collision)
+    // Dynamically derive site URL for localhost or production
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
+    // 3. Invite user via Supabase Auth with explicit redirect target
     const { data: inviteData, error: inviteError } =
       await admin.auth.admin.inviteUserByEmail(email, {
+        redirectTo: `${siteUrl}/auth/accept-invite`,
         data: {
           full_name,
           phone,
