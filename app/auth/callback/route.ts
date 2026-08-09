@@ -1,6 +1,5 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -8,41 +7,41 @@ export async function GET(request: Request) {
   const next = searchParams.get('next') ?? '/auth/accept-invite';
 
   if (code) {
-    const cookieStore = await cookies();
+    const cookieStore = await request.headers.get('cookie');
+    
+    // Create redirect response target
+    const response = NextResponse.redirect(`${origin}${next}`);
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           getAll() {
-            return cookieStore.getAll();
+            return request.headers
+              .get('cookie')
+              ?.split('; ')
+              .map((cookie) => {
+                const [name, ...rest] = cookie.split('=');
+                return { name, value: rest.join('=') };
+              }) ?? [];
           },
           setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {
-              // Safe catch when invoked from Server Components
-            }
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options);
+            });
           },
         },
       }
     );
 
-    // Exchange the single-use authorization code for an active session
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      // Forward the user to the target destination with active session cookies attached
-      return NextResponse.redirect(`${origin}${next}`);
+      return response;
     }
-
-    console.error('[PKCE_CALLBACK_ERROR] Code exchange failed:', error.message);
-  } else {
-    console.error('[PKCE_CALLBACK_ERROR] No authorization code found in request params.');
   }
 
-  // Fallback redirect if token exchange fails
-  return NextResponse.redirect(`${origin}/auth/accept-invite?error=Authentication+failed`);
+  // If code exchange fails, return user to sign-in with error message
+  return NextResponse.redirect(`${origin}/auth/signin?error=invalid_link`);
 }
