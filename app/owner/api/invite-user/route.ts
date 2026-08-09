@@ -127,10 +127,10 @@ export async function POST(request: Request) {
     // Dynamically derive site URL for localhost or production
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
-    // 3. Invite user via Supabase Auth with explicit redirect target
+    // 3. Invite user via Supabase Auth pointing to the PKCE callback route
     const { data: inviteData, error: inviteError } =
       await admin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${siteUrl}/auth/accept-invite`,
+        redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invite`,
         data: {
           full_name,
           phone,
