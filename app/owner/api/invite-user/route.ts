@@ -3,15 +3,13 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabaseServer';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
-// Prevents Next.js from attempting static page evaluation during 'npm run build'
 export const dynamic = 'force-dynamic';
 
-// GET: Fetch list of managed users linked ONLY to the logged-in owner's properties
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
 
-    // 1. Get authenticated user session
+    // 1. Authenticate landlord session
     const {
       data: { user },
       error: authError,
@@ -19,20 +17,22 @@ export async function GET() {
 
     if (authError || !user) {
       return NextResponse.json(
-        { error: 'Unauthorized: Session missing' },
+        { error: 'Unauthorized: Session token missing or expired.' },
         { status: 401 }
       );
     }
 
+    // 2. Initialize admin client
     const admin = getSupabaseAdmin();
 
-    // 2. Fetch properties owned by this landlord
+    // 3. Query Landlord Properties using column 'name' (matches public.properties table)
     const { data: ownerProps, error: propsError } = await admin
       .from('properties')
-      .select('id, property_name')
+      .select('id, name')
       .eq('owner_id', user.id);
 
     if (propsError) {
+      console.error('[INVITE_USER_API] Properties DB Error:', propsError.message);
       return NextResponse.json(
         { error: `Properties query error: ${propsError.message}` },
         { status: 500 }
@@ -40,27 +40,27 @@ export async function GET() {
     }
 
     const propertyIds = (ownerProps || []).map((p: any) => p.id);
-    const propMap = new Map((ownerProps || []).map((p: any) => [p.id, p.property_name || 'N/A']));
+    const propMap = new Map((ownerProps || []).map((p: any) => [p.id, p.name || 'N/A']));
 
     if (propertyIds.length === 0) {
       return NextResponse.json({ users: [] }, { status: 200 });
     }
 
-    // 3. Fetch profiles assigned to those properties
+    // 4. Query Profiles linked to these properties
     const { data: users, error: usersError } = await admin
       .from('profiles')
       .select('*')
-      .in('property_id', propertyIds)
-      .order('created_at', { ascending: false });
+      .in('property_id', propertyIds);
 
     if (usersError) {
+      console.error('[INVITE_USER_API] Profiles DB Error:', usersError.message);
       return NextResponse.json(
         { error: `Profiles query error: ${usersError.message}` },
         { status: 500 }
       );
     }
 
-    // 4. Format profiles for UI display
+    // 5. Safely map database fields to API output
     const formattedUsers = (users || []).map((usr: any) => ({
       id: usr.id,
       full_name: usr.full_name || usr.name || 'N/A',
@@ -77,80 +77,9 @@ export async function GET() {
 
     return NextResponse.json({ users: formattedUsers }, { status: 200 });
   } catch (error: any) {
+    console.error('[INVITE_USER_API] Server Crash:', error.message);
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-// POST: Process user invitation and trigger email verification
-export async function POST(request: Request) {
-  try {
-    const supabase = await createServerSupabaseClient();
-
-    const {
-      data: { user },
-      error: sessionError,
-    } = await supabase.auth.getUser();
-
-    if (sessionError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { full_name, email, phone, role, property_id, unit_number } = body;
-
-    if (!full_name || !email || !role || !property_id) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    const admin = getSupabaseAdmin();
-
-    // 1. Send invite email via Supabase Auth Admin
-    const { data: authData, error: inviteError } =
-      await admin.auth.admin.inviteUserByEmail(email, {
-        data: {
-          full_name,
-          phone,
-          role,
-          property_id,
-          unit_number,
-        },
-      });
-
-    if (inviteError) {
-      throw new Error(`Auth invitation failed: ${inviteError.message}`);
-    }
-
-    // 2. Insert record into database
-    const { error: dbError } = await admin.from('profiles').insert([
-      {
-        id: authData.user.id,
-        full_name,
-        email,
-        phone,
-        role,
-        property_id,
-        unit_number: unit_number === 'N/A' || !unit_number ? null : unit_number,
-        status: 'pending',
-      },
-    ]);
-
-    if (dbError) {
-      throw new Error(`Database record creation failed: ${dbError.message}`);
-    }
-
-    return NextResponse.json(
-      { message: 'User invited successfully' },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Failed to send invitation' },
+      { error: error.message || 'Unhandled Internal Server Error' },
       { status: 500 }
     );
   }
