@@ -17,47 +17,51 @@ export default function AcceptInvitePage() {
   const supabase = createClient();
 
   useEffect(() => {
-    // 1. Verify and capture session established from URL hash fragment
-    const checkSession = async () => {
-      const {
-        data: { session },
-        error: getSessionError,
-      } = await supabase.auth.getSession();
+    let mounted = true;
 
-      if (getSessionError || !session) {
-        // Listen for auth state change during asynchronous token exchange
-        const { data: authListener } = supabase.auth.onAuthStateChange(
-          (event, newSession) => {
-            if (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY' || newSession) {
-              setSessionError(null);
-              setInitializing(false);
-            }
-          }
-        );
+    // 1. Subscribe FIRST to capture the asynchronous token parsing from URL hash
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[AcceptInvite] Auth Event:', event, !!session);
 
-        // Buffer check for hash parsing completion
-        const timeout = setTimeout(async () => {
-          const {
-            data: { session: recheckedSession },
-          } = await supabase.auth.getSession();
-          if (!recheckedSession) {
-            setSessionError(
-              'Invite link session is missing or expired. Please request a new invitation.'
-            );
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'PASSWORD_RECOVERY') {
+        if (session && mounted) {
+          setSessionError(null);
+          setInitializing(false);
+        }
+      }
+    });
+
+    // 2. Check current session as fallback
+    const verifyInitialSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session && mounted) {
+        setSessionError(null);
+        setInitializing(false);
+        return;
+      }
+
+      // 3. Fallback timer if no session is established after 3 seconds
+      setTimeout(async () => {
+        const { data: { session: finalCheck } } = await supabase.auth.getSession();
+        if (!finalCheck && mounted) {
+          // Check if hash exists on client side
+          if (typeof window !== 'undefined' && !window.location.hash.includes('access_token')) {
+            setSessionError('No invitation token found in the URL. Please click the full link in your email.');
+          } else {
+            setSessionError('Invite session could not be established. Please try clicking the email link again.');
           }
           setInitializing(false);
-        }, 1000);
-
-        return () => {
-          clearTimeout(timeout);
-          authListener.subscription.unsubscribe();
-        };
-      } else {
-        setInitializing(false);
-      }
+        }
+      }, 3000);
     };
 
-    checkSession();
+    verifyInitialSession();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [supabase]);
 
   const handleSetPassword = async (e: React.FormEvent) => {
@@ -76,11 +80,8 @@ export default function AcceptInvitePage() {
     setLoading(true);
     setError(null);
 
-    // 2. Update user password (this updates session cookies automatically via @supabase/ssr)
-    const {
-      data: { user },
-      error: updateError,
-    } = await supabase.auth.updateUser({
+    // Update password for the established invite session
+    const { data: { user }, error: updateError } = await supabase.auth.updateUser({
       password,
     });
 
@@ -90,18 +91,15 @@ export default function AcceptInvitePage() {
       return;
     }
 
-    // 3. Mark user status active in profiles database table
+    // Mark user active in profiles
     await supabase
       .from('profiles')
       .update({ status: 'active' })
       .eq('id', user.id);
 
-    // 4. Force router refresh so SSR middleware reads updated session cookies instantly
     router.refresh();
 
-    // 5. Route user based on their assigned metadata role
     const userRole = user.user_metadata?.role || 'tenant';
-
     switch (userRole) {
       case 'owner':
         router.push('/owner/dashboard');
@@ -137,7 +135,6 @@ export default function AcceptInvitePage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center p-4">
       <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md border border-gray-100">
-        {/* Branding & Heading Header */}
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
             PropManager HQ
@@ -159,7 +156,6 @@ export default function AcceptInvitePage() {
           </div>
         ) : (
           <form onSubmit={handleSetPassword} className="space-y-4">
-            {/* New Password Input with Show/Hide Toggle */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 New Password
@@ -184,7 +180,6 @@ export default function AcceptInvitePage() {
               </div>
             </div>
 
-            {/* Confirm Password Input */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Confirm Password
@@ -200,14 +195,12 @@ export default function AcceptInvitePage() {
               />
             </div>
 
-            {/* Global Error Banner */}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-xs font-medium">
                 {error}
               </div>
             )}
 
-            {/* Submit Action */}
             <button
               type="submit"
               disabled={loading}
