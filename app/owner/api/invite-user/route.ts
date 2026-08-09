@@ -4,11 +4,11 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
+// --- GET HANDLER (For listing managed users) ---
 export async function GET() {
   try {
     const supabase = await createServerSupabaseClient();
 
-    // 1. Authenticate landlord session
     const {
       data: { user },
       error: authError,
@@ -21,10 +21,8 @@ export async function GET() {
       );
     }
 
-    // 2. Initialize admin client
     const admin = getSupabaseAdmin();
 
-    // 3. Query Landlord Properties with assigned manager and caretaker IDs
     const { data: ownerProps, error: propsError } = await admin
       .from('properties')
       .select('id, name, property_manager_id, caretaker_id')
@@ -38,7 +36,6 @@ export async function GET() {
       );
     }
 
-    // 4. Map user IDs to property names
     const assignedProfileIds = new Set<string>();
     const profilePropertyMap = new Map<string, string>();
 
@@ -59,7 +56,6 @@ export async function GET() {
       return NextResponse.json({ users: [] }, { status: 200 });
     }
 
-    // 5. Query Profiles using 'id'
     const { data: users, error: usersError } = await admin
       .from('profiles')
       .select('*')
@@ -73,7 +69,6 @@ export async function GET() {
       );
     }
 
-    // 6. Safely map database fields to API output
     const formattedUsers = (users || []).map((usr: any) => ({
       id: usr.id,
       full_name: usr.full_name || usr.name || 'N/A',
@@ -91,6 +86,93 @@ export async function GET() {
     return NextResponse.json({ users: formattedUsers }, { status: 200 });
   } catch (error: any) {
     console.error('[INVITE_USER_API] Server Crash:', error.message);
+    return NextResponse.json(
+      { error: error.message || 'Unhandled Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+// --- POST HANDLER (For inviting / adding a new user) ---
+export async function POST(request: Request) {
+  try {
+    const supabase = await createServerSupabaseClient();
+
+    // 1. Authenticate landlord session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Session token missing or expired.' },
+        { status: 401 }
+      );
+    }
+
+    // 2. Parse body payloads
+    const body = await request.json();
+    const { full_name, email, phone, role, property_id, unit_number } = body;
+
+    if (!email || !full_name || !role) {
+      return NextResponse.json(
+        { error: 'Missing required fields: full_name, email, and role.' },
+        { status: 400 }
+      );
+    }
+
+    const admin = getSupabaseAdmin();
+
+    // 3. Create user / Invite via Supabase Admin Auth
+    const { data: newUser, error: createError } = await admin.auth.admin.createUser({
+      email,
+      email_confirm: false,
+      user_metadata: {
+        full_name,
+        phone,
+        role,
+      },
+    });
+
+    if (createError) {
+      console.error('[INVITE_USER_POST] Auth Create Error:', createError.message);
+      return NextResponse.json({ error: createError.message }, { status: 400 });
+    }
+
+    const createdUserId = newUser.user.id;
+
+    // 4. Assign role on properties table if property_manager or caretaker
+    if (property_id) {
+      if (role === 'property_manager') {
+        await admin
+          .from('properties')
+          .update({ property_manager_id: createdUserId })
+          .eq('id', property_id);
+      } else if (role === 'caretaker') {
+        await admin
+          .from('properties')
+          .update({ caretaker_id: createdUserId })
+          .eq('id', property_id);
+      }
+    }
+
+    // 5. Update or insert into profiles table
+    await admin.from('profiles').upsert({
+      id: createdUserId,
+      full_name,
+      email,
+      phone,
+      role,
+      unit_number: unit_number !== 'N/A' ? unit_number : null,
+    });
+
+    return NextResponse.json(
+      { message: 'User invited and created successfully', user: newUser.user },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    console.error('[INVITE_USER_POST] Server Crash:', error.message);
     return NextResponse.json(
       { error: error.message || 'Unhandled Internal Server Error' },
       { status: 500 }
