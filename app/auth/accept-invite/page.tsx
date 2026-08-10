@@ -4,59 +4,67 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 
+// Instantiate outside the component to prevent re-creation on every render cycle
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 function AcceptInviteForm() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [initLoading, setInitLoading] = useState(true);
+  
+  // Separate fatal link errors from retriable form errors
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryError = searchParams.get('error');
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
   useEffect(() => {
     if (queryError) {
-      setError('Invalid or expired invitation link. Please request a new invite.');
+      setPageError('Invalid or expired invitation link. Please request a new invite.');
+      setInitLoading(false);
       return;
     }
 
     async function checkSession() {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      if (session?.user) {
-        setUserEmail(session.user.email ?? null);
+      if (user && !userError) {
+        setUserEmail(user.email ?? null);
       } else {
-        setError('Invalid or expired invitation link. Please request a new invite.');
+        setPageError('Invalid or expired invitation link. Please request a new invite.');
       }
+      setInitLoading(false);
     }
 
     checkSession();
-  }, [supabase, queryError]);
+  }, [queryError]);
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+      setFormError('Passwords do not match.');
       return;
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+      setFormError('Password must be at least 6 characters long.');
       return;
     }
 
     setLoading(true);
-    setError(null);
 
     const {
       data: { user },
@@ -66,7 +74,7 @@ function AcceptInviteForm() {
     });
 
     if (updateError || !user) {
-      setError(updateError?.message || 'Failed to set password.');
+      setFormError(updateError?.message || 'Failed to set password.');
       setLoading(false);
       return;
     }
@@ -77,8 +85,10 @@ function AcceptInviteForm() {
       .update({ status: 'active' })
       .eq('id', user.id);
 
-    // Role-based route redirection
-    const userRole = user.user_metadata?.role || 'tenant';
+    // Normalize role string to lowercase to match keys in redirectMap
+    const rawRole = (user.user_metadata?.role || 'tenant').toString();
+    const userRole = rawRole.toLowerCase();
+
     const redirectMap: Record<string, string> = {
       owner: '/owner/dashboard',
       property_manager: '/manager/dashboard',
@@ -88,6 +98,14 @@ function AcceptInviteForm() {
 
     router.push(redirectMap[userRole] || '/dashboard');
   };
+
+  if (initLoading) {
+    return (
+      <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md border border-gray-100 text-center text-sm text-gray-500">
+        Verifying invitation link...
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md border border-gray-100">
@@ -99,12 +117,18 @@ function AcceptInviteForm() {
         )}
       </div>
 
-      {error ? (
+      {pageError ? (
         <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-xs font-medium text-center">
-          {error}
+          {pageError}
         </div>
       ) : (
         <form onSubmit={handleSetPassword} className="space-y-4">
+          {formError && (
+            <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-xs font-medium text-center mb-3">
+              {formError}
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
             <div className="relative">

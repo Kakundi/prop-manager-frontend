@@ -101,12 +101,10 @@ export async function GET() {
 
       if (staffProfiles) {
         staffProfiles.forEach((staff) => {
-          // Find property name where staff member is assigned
           const assignedProp = ownerProperties.find(
             (p) => p.property_manager_id === staff.id || p.caretaker_id === staff.id
           );
 
-          // Avoid duplicate entries if user is already added
           if (!usersList.some((u) => u.id === staff.id)) {
             usersList.push({
               id: staff.id,
@@ -133,7 +131,7 @@ export async function GET() {
   }
 }
 
-// POST: Add new user, send invite link, create profile & tenant/property relationship
+// POST: Add new user, generate link with hashed_token, create profile & relationships
 export async function POST(request: Request) {
   try {
     const supabase = await createServerSupabaseClient();
@@ -164,27 +162,34 @@ export async function POST(request: Request) {
 
     const admin = getSupabaseAdmin();
     const siteUrl = getSiteUrl();
-
-    // Normalize role string (e.g. "tenant" -> "TENANT")
     const normalizedRole = role.toUpperCase();
 
-    // 3. Send Supabase Auth Invite Email
-    const { data: inviteData, error: inviteError } =
-      await admin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${siteUrl}/auth/callback?next=/auth/accept-invite`,
+    // 3. Generate Invite Link & Extract exact hashed_token from Supabase SDK
+    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+      type: 'invite',
+      email,
+      options: {
+        redirectTo: `${siteUrl}/auth/accept-invite`,
         data: {
           full_name,
           phone,
           role: normalizedRole,
         },
-      });
+      },
+    });
 
-    if (inviteError) {
-      console.error('[INVITE_USER_POST] Auth Invite Error:', inviteError.message);
-      return NextResponse.json({ error: inviteError.message }, { status: 400 });
+    if (linkError) {
+      console.error('[INVITE_USER_POST] Link Generation Error:', linkError.message);
+      return NextResponse.json({ error: linkError.message }, { status: 400 });
     }
 
-    const createdUserId = inviteData.user.id;
+    const createdUserId = linkData.user.id;
+    
+    // Exact property name on GenerateLinkProperties type
+    const hashedToken = linkData.properties.hashed_token;
+
+    // Construct server-callback URL with token_hash query parameter
+    const actionLink = `${siteUrl}/auth/callback?token_hash=${hashedToken}&type=invite&next=/auth/accept-invite`;
 
     // 4. Save/Upsert User Profile into `profiles` table
     const { error: profileError } = await admin.from('profiles').upsert({
@@ -204,24 +209,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const targetPropertyId = property_id && property_id !== 'na' ? property_id : null;
-    const targetUnitId = unit_id && unit_id !== 'na' ? unit_id : null;
+    // Sanitize property and unit inputs
+    const targetPropertyId = property_id && property_id !== 'na' && property_id !== '' ? property_id : null;
+    const targetUnitId = unit_id && unit_id !== 'na' && unit_id !== '' ? unit_id : null;
 
     // 5. Handle Role-Specific Database Linking
     if (normalizedRole === 'TENANT') {
-      // Insert tenant record into `tenants` table
       const { error: tenantError } = await admin.from('tenants').insert({
         profile_id: createdUserId,
         property_id: targetPropertyId,
         unit_id: targetUnitId,
-        lease_start: new Date().toISOString().split('T')[0], // Defaults to current YYYY-MM-DD
+        lease_start: new Date().toISOString().split('T')[0],
       });
 
       if (tenantError) {
         console.error('[INVITE_USER_POST] Tenant Record Creation Error:', tenantError.message);
       }
 
-      // Mark unit as occupied if assigned
       if (targetUnitId) {
         await admin
           .from('units')
@@ -229,13 +233,11 @@ export async function POST(request: Request) {
           .eq('id', targetUnitId);
       }
     } else if (normalizedRole === 'PROPERTY_MANAGER' && targetPropertyId) {
-      // Link property manager to property
       await admin
         .from('properties')
         .update({ property_manager_id: createdUserId })
         .eq('id', targetPropertyId);
     } else if (normalizedRole === 'CARETAKER' && targetPropertyId) {
-      // Link caretaker to property
       await admin
         .from('properties')
         .update({ caretaker_id: createdUserId })
@@ -243,7 +245,11 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { message: 'Verification link sent successfully & user record saved.', user: inviteData.user },
+      {
+        message: 'User created and invite link generated successfully.',
+        actionLink,
+        user: linkData.user,
+      },
       { status: 201 }
     );
   } catch (error: any) {
