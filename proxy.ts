@@ -10,12 +10,11 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // 1. Allow public auth routes without redirecting unauthenticated users to sign-in
+  // 1. Public auth routes (Allow /login, callback, accept-invite)
   const isPublicAuthRoute =
     pathname.startsWith('/auth/callback') ||
     pathname.startsWith('/auth/accept-invite') ||
-    pathname.startsWith('/auth/signin') ||
-    pathname.startsWith('/auth/login');
+    pathname.startsWith('/login');
 
   if (isPublicAuthRoute) {
     return response;
@@ -45,10 +44,10 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Redirect to signin if accessing a protected route without session
+  // Redirect to /login if accessing a protected route without a valid session
   if (!user) {
     const url = request.nextUrl.clone();
-    url.pathname = '/auth/signin';
+    url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
