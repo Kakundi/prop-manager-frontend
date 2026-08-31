@@ -4,12 +4,25 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getSiteUrl } from '@/lib/utils/url';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export const dynamic = 'force-dynamic';
+
+export async function GET() {
+  // GET logic remains unchanged...
+}
 
 export async function POST(request: Request) {
   try {
+    // Instantiate Resend inside the request handler
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      console.error('[INVITE_USER_POST] RESEND_API_KEY is not defined in environment variables.');
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing email API key.' },
+        { status: 500 }
+      );
+    }
+    const resend = new Resend(apiKey);
+
     const supabase = await createServerSupabaseClient();
 
     // 1. Authenticate landlord session
