@@ -1,31 +1,59 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabaseServer';
-import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { getSiteUrl } from '@/lib/utils/url';
-import { Resend } from 'resend';
+import { createServerSupabaseClient, getSupabaseAdmin } from '@/lib/supabaseServer';
 
-export const dynamic = 'force-dynamic';
-
-export async function GET() {
-  // GET logic remains unchanged...
+interface Profile {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  phone?: string | null;
+  phone_number?: string | null;
+  role: string | null;
+  created_at: string;
 }
 
-export async function POST(request: Request) {
+interface Property {
+  id: string;
+  name: string;
+  property_manager_id?: string | null;
+  caretaker_id?: string | null;
+}
+
+interface Tenant {
+  id: string;
+  profile_id: string;
+  property_id: string | null;
+  unit_id: string | null;
+  created_at: string;
+}
+
+interface Unit {
+  id: string;
+  unit_number: string;
+}
+
+export interface DirectoryUser {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  property_name: string;
+  unit_number: string;
+  created_at: string;
+}
+
+export async function GET() {
   try {
-    // Instantiate Resend inside the request handler
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      console.error('[INVITE_USER_POST] RESEND_API_KEY is not defined in environment variables.');
+    // 1. Authenticate landlord session via server cookies
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      console.error('[GET_USERS_DIRECTORY] Failed to create server Supabase client.');
       return NextResponse.json(
-        { error: 'Server configuration error: Missing email API key.' },
+        { error: 'Failed to initialize session client.' },
         { status: 500 }
       );
     }
-    const resend = new Resend(apiKey);
 
-    const supabase = await createServerSupabaseClient();
-
-    // 1. Authenticate landlord session
     const {
       data: { user },
       error: authError,
@@ -33,137 +61,157 @@ export async function POST(request: Request) {
 
     if (authError || !user) {
       return NextResponse.json(
-        { error: 'Unauthorized: Session token missing or expired.' },
+        { error: 'Unauthorized session.' },
         { status: 401 }
       );
     }
 
-    // 2. Parse request payload
-    const body = await request.json();
-    const { full_name, email, phone, role, property_id, unit_id } = body;
-
-    if (!email || !full_name || !role) {
-      return NextResponse.json(
-        { error: 'Missing required fields: full_name, email, and role.' },
-        { status: 400 }
-      );
-    }
-
+    // 2. Initialize Admin Client (uses SUPABASE_SERVICE_ROLE_KEY)
     const admin = getSupabaseAdmin();
-    const siteUrl = getSiteUrl();
-    const normalizedRole = role.toUpperCase();
-
-    // 3. Generate Invite Link & Extract hashed_token
-    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-      type: 'invite',
-      email,
-      options: {
-        redirectTo: `${siteUrl}/auth/accept-invite`,
-        data: {
-          full_name,
-          phone,
-          role: normalizedRole,
-        },
-      },
-    });
-
-    if (linkError) {
-      console.error('[INVITE_USER_POST] Link Generation Error:', linkError.message);
-      return NextResponse.json({ error: linkError.message }, { status: 400 });
-    }
-
-    const createdUserId = linkData.user.id;
-    const hashedToken = linkData.properties.hashed_token;
-
-    // Construct server-callback URL with token_hash query parameter
-    const actionLink = `${siteUrl}/auth/callback?token_hash=${hashedToken}&type=invite&next=/auth/accept-invite`;
-
-    // 4. Save/Upsert User Profile into `profiles` table
-    const { error: profileError } = await admin.from('profiles').upsert({
-      id: createdUserId,
-      full_name,
-      email,
-      phone: phone || null,
-      role: normalizedRole,
-      updated_at: new Date().toISOString(),
-    });
-
-    if (profileError) {
-      console.error('[INVITE_USER_POST] Profile Upsert Error:', profileError.message);
+    if (!admin) {
+      console.error('[GET_USERS_DIRECTORY_ERROR] Service Role Admin Client is missing or unconfigured. Verify SUPABASE_SERVICE_ROLE_KEY env variable.');
       return NextResponse.json(
-        { error: `User created, but profile update failed: ${profileError.message}` },
+        { error: 'Server configuration error: Service role key missing.' },
         { status: 500 }
       );
     }
 
-    // 5. Handle Role-Specific Database Linking
-    const targetPropertyId = property_id && property_id !== 'na' && property_id !== '' ? property_id : null;
-    const targetUnitId = unit_id && unit_id !== 'na' && unit_id !== '' ? unit_id : null;
+    const ownerId = user.id;
 
-    if (normalizedRole === 'TENANT') {
-      const { error: tenantError } = await admin.from('tenants').insert({
-        profile_id: createdUserId,
-        property_id: targetPropertyId,
-        unit_id: targetUnitId,
-        lease_start: new Date().toISOString().split('T')[0],
-      });
+    // 3. Fetch properties owned by landlord
+    const { data: ownerProperties, error: propsError } = await admin
+      .from('properties')
+      .select('id, name, property_manager_id, caretaker_id')
+      .eq('owner_id', ownerId);
 
-      if (tenantError) {
-        console.error('[INVITE_USER_POST] Tenant Record Creation Error:', tenantError.message);
-      }
-
-      if (targetUnitId) {
-        await admin
-          .from('units')
-          .update({ is_occupied: true })
-          .eq('id', targetUnitId);
-      }
-    } else if (normalizedRole === 'PROPERTY_MANAGER' && targetPropertyId) {
-      await admin
-        .from('properties')
-        .update({ property_manager_id: createdUserId })
-        .eq('id', targetPropertyId);
-    } else if (normalizedRole === 'CARETAKER' && targetPropertyId) {
-      await admin
-        .from('properties')
-        .update({ caretaker_id: createdUserId })
-        .eq('id', targetPropertyId);
+    if (propsError) {
+      console.error('[GET_USERS_PROPS_ERROR]', propsError.message);
+      return NextResponse.json({ error: propsError.message }, { status: 400 });
     }
 
-    // 6. Send Invitation Email via Resend
-    const { error: emailError } = await resend.emails.send({
-      from: 'PropManager <onboarding@resend.dev>',
-      to: [email],
-      subject: 'You have been invited to PropManager HQ',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
-          <h2 style="color: #111827; margin-bottom: 8px;">Welcome to PropManager HQ</h2>
-          <p style="color: #4b5563; font-size: 14px;">Hello <strong>${full_name}</strong>,</p>
-          <p style="color: #4b5563; font-size: 14px;">You have been invited as a <strong>${normalizedRole}</strong>.</p>
-          <div style="margin: 24px 0;">
-            <a href="${actionLink}" style="background-color: #2563eb; color: #ffffff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-block;">Set Up Account & Password</a>
-          </div>
-          <p style="color: #9ca3af; font-size: 12px; margin-top: 24px;">If the button above does not work, paste this link into your browser:<br/><a href="${actionLink}" style="color: #2563eb;">${actionLink}</a></p>
-        </div>
-      `,
+    const typedProperties: Property[] = ownerProperties || [];
+
+    if (typedProperties.length === 0) {
+      return NextResponse.json({ users: [] }, { status: 200 });
+    }
+
+    const propertyIds = typedProperties.map((p) => p.id);
+    const propertyMap = new Map<string, string>(
+      typedProperties.map((p) => [p.id, p.name])
+    );
+
+    // 4. Fetch Tenant Records for owned properties
+    const { data: tenantRecords, error: tenantsError } = await admin
+      .from('tenants')
+      .select('id, profile_id, property_id, unit_id, created_at')
+      .in('property_id', propertyIds);
+
+    if (tenantsError) {
+      console.error('[GET_TENANTS_ERROR]', tenantsError.message);
+    }
+
+    const typedTenants: Tenant[] = tenantRecords || [];
+
+    // Collect all unique profile IDs (Tenants + Property Managers + Caretakers)
+    const tenantProfileIds = typedTenants
+      .map((t) => t.profile_id)
+      .filter((id): id is string => Boolean(id));
+
+    const staffUserIds = typedProperties
+      .flatMap((p) => [p.property_manager_id, p.caretaker_id])
+      .filter((id): id is string => Boolean(id));
+
+    const allProfileIds = Array.from(new Set([...tenantProfileIds, ...staffUserIds]));
+
+    if (allProfileIds.length === 0) {
+      return NextResponse.json({ users: [] }, { status: 200 });
+    }
+
+    // 5. Fetch Profiles directly for all resolved IDs
+    const { data: profiles, error: profilesError } = await admin
+      .from('profiles')
+      .select('id, full_name, email, phone, role, created_at')
+      .in('id', allProfileIds);
+
+    if (profilesError) {
+      console.error('[GET_PROFILES_ERROR]', profilesError.message);
+      return NextResponse.json({ error: profilesError.message }, { status: 400 });
+    }
+
+    const typedProfiles: Profile[] = profiles || [];
+    const profileMap = new Map<string, Profile>(
+      typedProfiles.map((p) => [p.id, p])
+    );
+
+    // 6. Fetch Units directly for tenant unit mappings
+    const unitIds = typedTenants
+      .map((t) => t.unit_id)
+      .filter((id): id is string => Boolean(id));
+
+    let unitMap = new Map<string, string>();
+    if (unitIds.length > 0) {
+      const { data: units, error: unitsError } = await admin
+        .from('units')
+        .select('id, unit_number')
+        .in('id', unitIds);
+
+      if (unitsError) {
+        console.error('[GET_UNITS_ERROR]', unitsError.message);
+      } else if (units) {
+        const typedUnits: Unit[] = units;
+        unitMap = new Map<string, string>(
+          typedUnits.map((u) => [u.id, u.unit_number])
+        );
+      }
+    }
+
+    // 7. Assemble Directory List safely
+    const usersList: DirectoryUser[] = [];
+
+    // Assemble Tenants
+    typedTenants.forEach((tenant) => {
+      const prof = profileMap.get(tenant.profile_id);
+      if (prof) {
+        usersList.push({
+          id: prof.id,
+          full_name: prof.full_name || 'N/A',
+          email: prof.email || 'N/A',
+          phone: prof.phone || prof.phone_number || 'N/A',
+          role: prof.role || 'Tenant',
+          property_name: tenant.property_id ? propertyMap.get(tenant.property_id) || 'N/A' : 'N/A',
+          unit_number: tenant.unit_id ? unitMap.get(tenant.unit_id) || 'N/A' : 'N/A',
+          created_at: tenant.created_at || new Date().toISOString(),
+        });
+      }
     });
 
-    if (emailError) {
-      console.error('[RESEND_EMAIL_ERROR]', emailError);
-    }
+    // Assemble Staff (Managers & Caretakers)
+    staffUserIds.forEach((staffId) => {
+      const prof = profileMap.get(staffId);
+      // Avoid duplicate entries if staff member is also in tenants
+      if (prof && !usersList.some((u) => u.id === staffId)) {
+        const assignedProp = typedProperties.find(
+          (p) => p.property_manager_id === staffId || p.caretaker_id === staffId
+        );
+        usersList.push({
+          id: prof.id,
+          full_name: prof.full_name || 'N/A',
+          email: prof.email || 'N/A',
+          phone: prof.phone || prof.phone_number || 'N/A',
+          role: prof.role || 'Staff',
+          property_name: assignedProp ? assignedProp.name : 'N/A',
+          unit_number: 'N/A (Building Level)',
+          created_at: prof.created_at || new Date().toISOString(),
+        });
+      }
+    });
 
+    return NextResponse.json({ users: usersList }, { status: 200 });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('[GET_USERS_DIRECTORY_CRASH]', err.stack || err.message);
     return NextResponse.json(
-      {
-        message: 'User created and invite email sent successfully.',
-        actionLink,
-        user: linkData.user,
-      },
-      { status: 201 }
-    );
-  } catch (error: any) {
-    console.error('[INVITE_USER_POST] Server Error:', error.message);
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
+      { error: err.message || 'Internal Server Error' },
       { status: 500 }
     );
   }
