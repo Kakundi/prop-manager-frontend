@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const type = searchParams.get('type') as EmailOtpType | null;
   const next = searchParams.get('next') ?? '/auth/accept-invite';
 
-  // Construct target redirect URL
+  // Target redirect URL on successful exchange
   const response = NextResponse.redirect(`${origin}${next}`);
 
   const supabase = createServerClient(
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     }
   );
 
-  // Path A: Standard PKCE Code Exchange (e.g., OAuth / standard sign-ins)
+  // Path A: Standard PKCE Code Exchange (Invites & Magic links via PKCE)
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     console.error('[CALLBACK_CODE_ERROR]', error.message);
   }
 
-  // Path B: Server-Side OTP Verification for Admin Invites / Magic Links
+  // Path B: OTP Verification for Server-Side Invites
   if (token_hash && type) {
     const { error } = await supabase.auth.verifyOtp({
       type,
@@ -56,6 +56,6 @@ export async function GET(request: Request) {
     console.error('[CALLBACK_VERIFY_OTP_ERROR]', error.message);
   }
 
-  // Fallback: If both fail or query parameters are completely missing
-  return NextResponse.redirect(`${origin}/auth/signin?error=invalid_link`);
+  // Fallback: Redirect to /login (instead of /auth/signin to avoid 404)
+  return NextResponse.redirect(`${origin}/login?error=invalid_link`);
 }

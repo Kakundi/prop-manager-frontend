@@ -4,7 +4,6 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 
-// Instantiate outside the component to prevent re-creation on every render cycle
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -17,7 +16,6 @@ function AcceptInviteForm() {
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
   
-  // Separate fatal link errors from retriable form errors
   const [pageError, setPageError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -66,6 +64,7 @@ function AcceptInviteForm() {
 
     setLoading(true);
 
+    // 1. Update the password in Supabase Auth
     const {
       data: { user },
       error: updateError,
@@ -79,24 +78,17 @@ function AcceptInviteForm() {
       return;
     }
 
-    // Mark profile status as active
+    // 2. Mark profile status as active
     await supabase
       .from('profiles')
       .update({ status: 'active' })
       .eq('id', user.id);
 
-    // Normalize role string to lowercase to match keys in redirectMap
-    const rawRole = (user.user_metadata?.role || 'tenant').toString();
-    const userRole = rawRole.toLowerCase();
+    // 3. Sign out session so user must log in manually
+    await supabase.auth.signOut();
 
-    const redirectMap: Record<string, string> = {
-      owner: '/owner/dashboard',
-      property_manager: '/manager/dashboard',
-      caretaker: '/caretaker/dashboard',
-      tenant: '/tenant/dashboard',
-    };
-
-    router.push(redirectMap[userRole] || '/dashboard');
+    // 4. Redirect to Sign-In page with a success message
+    router.push('/login?message=Account activated! Please sign in with your new password.');
   };
 
   if (initLoading) {
@@ -169,7 +161,7 @@ function AcceptInviteForm() {
             disabled={loading || !userEmail}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm disabled:opacity-50 transition"
           >
-            {loading ? 'Activating Account...' : 'Set Password & Access Portal'}
+            {loading ? 'Activating Account...' : 'Set Password & Go to Sign In'}
           </button>
         </form>
       )}
