@@ -180,7 +180,7 @@ export async function GET() {
           full_name: prof.full_name || 'N/A',
           email: prof.email || 'N/A',
           phone: prof.phone || prof.phone_number || 'N/A',
-          role: prof.role || 'Tenant',
+          role: prof.role || 'tenant',
           property_name: tenant.property_id ? propertyMap.get(tenant.property_id) || 'N/A' : 'N/A',
           unit_number: tenant.unit_id ? unitMap.get(tenant.unit_id) || 'N/A' : 'N/A',
           created_at: tenant.created_at || new Date().toISOString(),
@@ -200,7 +200,7 @@ export async function GET() {
           full_name: prof.full_name || 'N/A',
           email: prof.email || 'N/A',
           phone: prof.phone || prof.phone_number || 'N/A',
-          role: prof.role || 'Staff',
+          role: prof.role || 'property_manager',
           property_name: assignedProp ? assignedProp.name : 'N/A',
           unit_number: 'N/A (Building Level)',
           created_at: prof.created_at || new Date().toISOString(),
@@ -263,12 +263,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Normalize role string formatting
+    // 2. Normalize role string directly to PostgreSQL enum format (lowercase & snake_case)
     const roleLower = rawRole.toString().trim().toLowerCase();
-    let role = rawRole;
-    if (roleLower === 'tenant') role = 'Tenant';
-    else if (roleLower === 'caretaker') role = 'Caretaker';
-    else if (roleLower === 'property manager' || roleLower === 'property_manager') role = 'Property Manager';
+    let dbRole = 'tenant';
+
+    if (roleLower === 'tenant') {
+      dbRole = 'tenant';
+    } else if (roleLower === 'caretaker') {
+      dbRole = 'caretaker';
+    } else if (roleLower === 'property manager' || roleLower === 'property_manager') {
+      dbRole = 'property_manager';
+    } else {
+      dbRole = roleLower.replace(/\s+/g, '_');
+    }
 
     // 3. Resolve Unit UUID from unit display string (e.g. "Unit A-101" -> UUID)
     let resolvedUnitId: string | null = null;
@@ -297,13 +304,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. Send Supabase Auth Invite Email
+    // 4. Send Supabase Auth Invite Email with sanitized dbRole
     const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`;
 
     const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
       email,
       {
-        data: { full_name: fullName, role: role },
+        data: { full_name: fullName, role: dbRole },
         redirectTo: redirectUrl,
       }
     );
@@ -315,13 +322,13 @@ export async function POST(request: Request) {
 
     const newUserId = inviteData.user.id;
 
-    // 5. Insert or update record in public.profiles
+    // 5. Insert or update record in public.profiles with strictly lowercase enum value
     const { error: profileError } = await admin.from('profiles').upsert({
       id: newUserId,
       full_name: fullName,
       email: email,
       phone: phone,
-      role: role,
+      role: dbRole,
       created_at: new Date().toISOString(),
     });
 
@@ -334,7 +341,7 @@ export async function POST(request: Request) {
     }
 
     // 6. Link user to Tenants table or Property Staff fields
-    if (roleLower === 'tenant') {
+    if (dbRole === 'tenant') {
       const { error: tenantError } = await admin.from('tenants').insert({
         profile_id: newUserId,
         property_id: propertyId,
@@ -348,7 +355,7 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-    } else if (roleLower === 'property manager' || roleLower === 'property_manager') {
+    } else if (dbRole === 'property_manager') {
       const { error: propError } = await admin
         .from('properties')
         .update({ property_manager_id: newUserId })
@@ -357,7 +364,7 @@ export async function POST(request: Request) {
       if (propError) {
         console.error('[UPDATE_PROPERTY_MANAGER_ERROR]', propError.message);
       }
-    } else if (roleLower === 'caretaker') {
+    } else if (dbRole === 'caretaker') {
       const { error: caretakerError } = await admin
         .from('properties')
         .update({ caretaker_id: newUserId })
