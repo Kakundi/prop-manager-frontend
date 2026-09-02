@@ -248,13 +248,13 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    // Extract payload with fallbacks for camelCase and snake_case inputs
+    // 1. Extract payload keys (supports camelCase and snake_case)
     const fullName = body.fullName || body.full_name;
     const email = body.email;
     const phone = body.phone || body.phone_number || null;
     const rawRole = body.role;
     const propertyId = body.propertyId || body.property_id;
-    const rawUnitId = body.unitId || body.unit_id || body.unit_number;
+    const rawUnitInput = body.unitId || body.unit_id || body.unit_number;
 
     if (!email || !fullName || !rawRole || !propertyId) {
       return NextResponse.json(
@@ -263,18 +263,43 @@ export async function POST(request: Request) {
       );
     }
 
-    // Normalize role string formatting
+    // 2. Normalize role string formatting
     const roleLower = rawRole.toString().trim().toLowerCase();
     let role = rawRole;
     if (roleLower === 'tenant') role = 'Tenant';
     else if (roleLower === 'caretaker') role = 'Caretaker';
     else if (roleLower === 'property manager' || roleLower === 'property_manager') role = 'Property Manager';
 
-    const unitId = rawUnitId && rawUnitId !== 'N/A' ? rawUnitId : null;
+    // 3. Resolve Unit UUID from unit display string (e.g. "Unit A-101" -> UUID)
+    let resolvedUnitId: string | null = null;
+    if (rawUnitInput && rawUnitInput !== 'N/A' && !rawUnitInput.includes('N/A')) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawUnitInput);
 
-    // 1. Send Supabase Auth Invite Email via Custom Resend SMTP
+      if (isUuid) {
+        resolvedUnitId = rawUnitInput;
+      } else {
+        // Strip "Unit " prefix if passed (e.g., "Unit A-101" -> "A-101")
+        const cleanUnitNum = rawUnitInput.replace(/^Unit\s*/i, '').trim();
+
+        const { data: matchedUnit, error: unitSearchError } = await admin
+          .from('units')
+          .select('id')
+          .eq('property_id', propertyId)
+          .ilike('unit_number', cleanUnitNum)
+          .maybeSingle();
+
+        if (unitSearchError) {
+          console.warn('[UNIT_LOOKUP_WARN]', unitSearchError.message);
+        }
+        if (matchedUnit) {
+          resolvedUnitId = matchedUnit.id;
+        }
+      }
+    }
+
+    // 4. Send Supabase Auth Invite Email
     const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`;
-    
+
     const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
       email,
       {
@@ -290,7 +315,7 @@ export async function POST(request: Request) {
 
     const newUserId = inviteData.user.id;
 
-    // 2. Insert or update record in public.profiles
+    // 5. Insert or update record in public.profiles
     const { error: profileError } = await admin.from('profiles').upsert({
       id: newUserId,
       full_name: fullName,
@@ -302,25 +327,45 @@ export async function POST(request: Request) {
 
     if (profileError) {
       console.error('[CREATE_PROFILE_ERROR]', profileError.message);
-      return NextResponse.json({ error: profileError.message }, { status: 400 });
+      return NextResponse.json(
+        { error: `Profile error: ${profileError.message}` },
+        { status: 400 }
+      );
     }
 
-    // 3. Link user to Tenant table or Property Staff fields (case-insensitive role check)
+    // 6. Link user to Tenants table or Property Staff fields
     if (roleLower === 'tenant') {
       const { error: tenantError } = await admin.from('tenants').insert({
         profile_id: newUserId,
         property_id: propertyId,
-        unit_id: unitId,
+        unit_id: resolvedUnitId,
       });
 
       if (tenantError) {
         console.error('[CREATE_TENANT_ERROR]', tenantError.message);
-        return NextResponse.json({ error: tenantError.message }, { status: 400 });
+        return NextResponse.json(
+          { error: `Tenant record error: ${tenantError.message}` },
+          { status: 400 }
+        );
       }
     } else if (roleLower === 'property manager' || roleLower === 'property_manager') {
-      await admin.from('properties').update({ property_manager_id: newUserId }).eq('id', propertyId);
+      const { error: propError } = await admin
+        .from('properties')
+        .update({ property_manager_id: newUserId })
+        .eq('id', propertyId);
+
+      if (propError) {
+        console.error('[UPDATE_PROPERTY_MANAGER_ERROR]', propError.message);
+      }
     } else if (roleLower === 'caretaker') {
-      await admin.from('properties').update({ caretaker_id: newUserId }).eq('id', propertyId);
+      const { error: caretakerError } = await admin
+        .from('properties')
+        .update({ caretaker_id: newUserId })
+        .eq('id', propertyId);
+
+      if (caretakerError) {
+        console.error('[UPDATE_CARETAKER_ERROR]', caretakerError.message);
+      }
     }
 
     return NextResponse.json(
