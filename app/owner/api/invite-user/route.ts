@@ -247,14 +247,30 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { fullName, email, phone, role, propertyId, unitId } = body;
 
-    if (!email || !fullName || !role || !propertyId) {
+    // Extract payload with fallbacks for camelCase and snake_case inputs
+    const fullName = body.fullName || body.full_name;
+    const email = body.email;
+    const phone = body.phone || body.phone_number || null;
+    const rawRole = body.role;
+    const propertyId = body.propertyId || body.property_id;
+    const rawUnitId = body.unitId || body.unit_id || body.unit_number;
+
+    if (!email || !fullName || !rawRole || !propertyId) {
       return NextResponse.json(
         { error: 'Full name, email, role, and property assignment are required.' },
         { status: 400 }
       );
     }
+
+    // Normalize role string formatting
+    const roleLower = rawRole.toString().trim().toLowerCase();
+    let role = rawRole;
+    if (roleLower === 'tenant') role = 'Tenant';
+    else if (roleLower === 'caretaker') role = 'Caretaker';
+    else if (roleLower === 'property manager' || roleLower === 'property_manager') role = 'Property Manager';
+
+    const unitId = rawUnitId && rawUnitId !== 'N/A' ? rawUnitId : null;
 
     // 1. Send Supabase Auth Invite Email via Custom Resend SMTP
     const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`;
@@ -279,7 +295,7 @@ export async function POST(request: Request) {
       id: newUserId,
       full_name: fullName,
       email: email,
-      phone: phone || null,
+      phone: phone,
       role: role,
       created_at: new Date().toISOString(),
     });
@@ -289,21 +305,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: profileError.message }, { status: 400 });
     }
 
-    // 3. Link user to Tenant table or Property Staff fields
-    if (role === 'Tenant') {
+    // 3. Link user to Tenant table or Property Staff fields (case-insensitive role check)
+    if (roleLower === 'tenant') {
       const { error: tenantError } = await admin.from('tenants').insert({
         profile_id: newUserId,
         property_id: propertyId,
-        unit_id: unitId && unitId !== 'N/A' ? unitId : null,
+        unit_id: unitId,
       });
 
       if (tenantError) {
         console.error('[CREATE_TENANT_ERROR]', tenantError.message);
         return NextResponse.json({ error: tenantError.message }, { status: 400 });
       }
-    } else if (role === 'Property Manager') {
+    } else if (roleLower === 'property manager' || roleLower === 'property_manager') {
       await admin.from('properties').update({ property_manager_id: newUserId }).eq('id', propertyId);
-    } else if (role === 'Caretaker') {
+    } else if (roleLower === 'caretaker') {
       await admin.from('properties').update({ caretaker_id: newUserId }).eq('id', propertyId);
     }
 
