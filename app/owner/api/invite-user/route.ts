@@ -304,8 +304,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. Send Supabase Auth Invite Email with sanitized dbRole
-    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`;
+    // 4. Send Supabase Auth Invite Email with dynamic domain fallback
+    const baseUrl =
+      process.env.APP_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      'http://localhost:3000';
+
+    const redirectUrl = `${baseUrl.replace(/\/$/, '')}/auth/callback`;
 
     const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
       email,
