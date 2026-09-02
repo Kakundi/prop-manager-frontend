@@ -15,7 +15,7 @@ function AcceptInviteForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
-  
+
   const [pageError, setPageError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -31,21 +31,46 @@ function AcceptInviteForm() {
       return;
     }
 
-    async function checkSession() {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (user && !userError) {
-        setUserEmail(user.email ?? null);
-      } else {
-        setPageError('Invalid or expired invitation link. Please request a new invite.');
+    // 1. Listen for auth state changes (handles URL hash fragments & session hydration)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUserEmail(session.user.email ?? null);
+        setPageError(null);
       }
       setInitLoading(false);
+    });
+
+    // 2. Direct session check fallback
+    async function checkUser() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        setUserEmail(user.email ?? null);
+        setPageError(null);
+        setInitLoading(false);
+      } else {
+        // Allow time for client SDK hash-parsing before showing error
+        setTimeout(async () => {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (!session?.user) {
+            setPageError('Invalid or expired invitation link. Please request a new invite.');
+          }
+          setInitLoading(false);
+        }, 1200);
+      }
     }
 
-    checkSession();
+    checkUser();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [queryError]);
 
   const handleSetPassword = async (e: React.FormEvent) => {
