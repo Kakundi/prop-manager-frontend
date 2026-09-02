@@ -42,9 +42,12 @@ export interface DirectoryUser {
   created_at: string;
 }
 
+// ==========================================
+// 1. GET HANDLER: Fetch Directory
+// ==========================================
 export async function GET() {
   try {
-    // 1. Authenticate landlord session via server cookies
+    // Authenticate landlord session via server cookies
     const supabase = await createServerSupabaseClient();
     if (!supabase) {
       console.error('[GET_USERS_DIRECTORY] Failed to create server Supabase client.');
@@ -66,7 +69,7 @@ export async function GET() {
       );
     }
 
-    // 2. Initialize Admin Client (uses SUPABASE_SERVICE_ROLE_KEY)
+    // Initialize Admin Client (uses SUPABASE_SERVICE_ROLE_KEY)
     const admin = getSupabaseAdmin();
     if (!admin) {
       console.error('[GET_USERS_DIRECTORY_ERROR] Service Role Admin Client is missing or unconfigured. Verify SUPABASE_SERVICE_ROLE_KEY env variable.');
@@ -78,7 +81,7 @@ export async function GET() {
 
     const ownerId = user.id;
 
-    // 3. Fetch properties owned by landlord
+    // Fetch properties owned by landlord
     const { data: ownerProperties, error: propsError } = await admin
       .from('properties')
       .select('id, name, property_manager_id, caretaker_id')
@@ -100,7 +103,7 @@ export async function GET() {
       typedProperties.map((p) => [p.id, p.name])
     );
 
-    // 4. Fetch Tenant Records for owned properties
+    // Fetch Tenant Records for owned properties
     const { data: tenantRecords, error: tenantsError } = await admin
       .from('tenants')
       .select('id, profile_id, property_id, unit_id, created_at')
@@ -127,7 +130,7 @@ export async function GET() {
       return NextResponse.json({ users: [] }, { status: 200 });
     }
 
-    // 5. Fetch Profiles directly for all resolved IDs
+    // Fetch Profiles directly for all resolved IDs
     const { data: profiles, error: profilesError } = await admin
       .from('profiles')
       .select('id, full_name, email, phone, role, created_at')
@@ -143,7 +146,7 @@ export async function GET() {
       typedProfiles.map((p) => [p.id, p])
     );
 
-    // 6. Fetch Units directly for tenant unit mappings
+    // Fetch Units directly for tenant unit mappings
     const unitIds = typedTenants
       .map((t) => t.unit_id)
       .filter((id): id is string => Boolean(id));
@@ -165,7 +168,7 @@ export async function GET() {
       }
     }
 
-    // 7. Assemble Directory List safely
+    // Assemble Directory List safely
     const usersList: DirectoryUser[] = [];
 
     // Assemble Tenants
@@ -188,7 +191,6 @@ export async function GET() {
     // Assemble Staff (Managers & Caretakers)
     staffUserIds.forEach((staffId) => {
       const prof = profileMap.get(staffId);
-      // Avoid duplicate entries if staff member is also in tenants
       if (prof && !usersList.some((u) => u.id === staffId)) {
         const assignedProp = typedProperties.find(
           (p) => p.property_manager_id === staffId || p.caretaker_id === staffId
@@ -212,6 +214,108 @@ export async function GET() {
     console.error('[GET_USERS_DIRECTORY_CRASH]', err.stack || err.message);
     return NextResponse.json(
       { error: err.message || 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+// ==========================================
+// 2. POST HANDLER: Invite & Add User
+// ==========================================
+export async function POST(request: Request) {
+  try {
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      return NextResponse.json({ error: 'Session initialization failed.' }, { status: 500 });
+    }
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized session.' }, { status: 401 });
+    }
+
+    const admin = getSupabaseAdmin();
+    if (!admin) {
+      return NextResponse.json(
+        { error: 'Missing SUPABASE_SERVICE_ROLE_KEY configuration.' },
+        { status: 500 }
+      );
+    }
+
+    const body = await request.json();
+    const { fullName, email, phone, role, propertyId, unitId } = body;
+
+    if (!email || !fullName || !role || !propertyId) {
+      return NextResponse.json(
+        { error: 'Full name, email, role, and property assignment are required.' },
+        { status: 400 }
+      );
+    }
+
+    // 1. Send Supabase Auth Invite Email via Custom Resend SMTP
+    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`;
+    
+    const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
+      email,
+      {
+        data: { full_name: fullName, role: role },
+        redirectTo: redirectUrl,
+      }
+    );
+
+    if (inviteError) {
+      console.error('[INVITE_USER_ERROR]', inviteError.message);
+      return NextResponse.json({ error: inviteError.message }, { status: 400 });
+    }
+
+    const newUserId = inviteData.user.id;
+
+    // 2. Insert or update record in public.profiles
+    const { error: profileError } = await admin.from('profiles').upsert({
+      id: newUserId,
+      full_name: fullName,
+      email: email,
+      phone: phone || null,
+      role: role,
+      created_at: new Date().toISOString(),
+    });
+
+    if (profileError) {
+      console.error('[CREATE_PROFILE_ERROR]', profileError.message);
+      return NextResponse.json({ error: profileError.message }, { status: 400 });
+    }
+
+    // 3. Link user to Tenant table or Property Staff fields
+    if (role === 'Tenant') {
+      const { error: tenantError } = await admin.from('tenants').insert({
+        profile_id: newUserId,
+        property_id: propertyId,
+        unit_id: unitId && unitId !== 'N/A' ? unitId : null,
+      });
+
+      if (tenantError) {
+        console.error('[CREATE_TENANT_ERROR]', tenantError.message);
+        return NextResponse.json({ error: tenantError.message }, { status: 400 });
+      }
+    } else if (role === 'Property Manager') {
+      await admin.from('properties').update({ property_manager_id: newUserId }).eq('id', propertyId);
+    } else if (role === 'Caretaker') {
+      await admin.from('properties').update({ caretaker_id: newUserId }).eq('id', propertyId);
+    }
+
+    return NextResponse.json(
+      { message: 'User invited and assigned successfully!', user: inviteData.user },
+      { status: 201 }
+    );
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('[POST_USERS_DIRECTORY_ERROR]', err.message);
+    return NextResponse.json(
+      { error: err.message || 'Failed to add and invite user.' },
       { status: 500 }
     );
   }
