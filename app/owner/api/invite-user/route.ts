@@ -305,12 +305,16 @@ export async function POST(request: Request) {
     }
 
     // 4. Send Supabase Auth Invite Email with dynamic domain fallback
-    const baseUrl =
+    const rawBaseUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
       process.env.APP_URL ||
       process.env.NEXT_PUBLIC_APP_URL ||
-      'http://localhost:3000';
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
-    const redirectUrl = `${baseUrl.replace(/\/$/, '')}/auth/callback`;
+    const cleanBaseUrl = rawBaseUrl.replace(/\/$/, '');
+
+    // Explicitly target /auth/callback with destination set to /auth/accept-invite
+    const redirectUrl = `${cleanBaseUrl}/auth/callback?next=/auth/accept-invite`;
 
     const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
       email,

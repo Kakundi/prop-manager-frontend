@@ -1,3 +1,4 @@
+// proxy.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
@@ -10,17 +11,16 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // 1. Public auth routes (Allow /login, callback, accept-invite)
+  // Allow all /auth subroutes (/auth/callback, /auth/accept-invite, /auth/signin) and /login
   const isPublicAuthRoute =
-    pathname.startsWith('/auth/callback') ||
-    pathname.startsWith('/auth/accept-invite') ||
+    pathname.startsWith('/auth') ||
     pathname.startsWith('/login');
 
   if (isPublicAuthRoute) {
     return response;
   }
 
-  // 2. Refresh/check session for protected routes
+  // Session check for protected routes
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -44,7 +44,6 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Redirect to /login if accessing a protected route without a valid session
   if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
