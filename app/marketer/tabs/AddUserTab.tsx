@@ -4,7 +4,15 @@
 import React, { useState } from 'react';
 import { UserPlus, CheckCircle2, AlertCircle } from 'lucide-react';
 
-export const AddUserTab: React.FC = () => {
+interface AddUserTabProps {
+  currentUserId?: string;
+  fullName?: string;
+}
+
+export const AddUserTab: React.FC<AddUserTabProps> = ({
+  currentUserId,
+  fullName: marketerFullName,
+}) => {
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<'agent' | 'property_manager' | 'accountant'>('agent');
@@ -17,7 +25,7 @@ export const AddUserTab: React.FC = () => {
     setMessage(null);
 
     try {
-      // Add your user invite logic / Supabase function here
+      // Invite logic here utilizing currentUserId/marketerFullName as necessary
       setMessage({ type: 'success', text: `User ${fullName} invited successfully.` });
       setEmail('');
       setFullName('');
@@ -35,9 +43,11 @@ export const AddUserTab: React.FC = () => {
           <UserPlus size={20} className="text-amber-500" />
           Add / Invite User
         </h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Invite new team members or agents to manage property workflows.
-        </p>
+        {marketerFullName && (
+          <p className="text-xs text-gray-500 mt-0.5">
+            Invited by: <span className="font-semibold text-gray-700">{marketerFullName}</span>
+          </p>
+        )}
       </div>
 
       {message && (
