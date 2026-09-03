@@ -1,67 +1,74 @@
+// app/super-admin/page.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { SuperAdminTab } from './types';
+import React, { useState } from 'react';
+import { SuperadminTab } from './types';
 import { Sidebar } from './components/Sidebar';
-import { Header } from './components/Header';
+
+// Business & Reconciliation Tabs
 import { DashboardTab } from './tabs/DashboardTab';
-import { AddUsersTab } from './tabs/AddUsersTab';
 import { SubscribersTab } from './tabs/SubscribersTab';
+import { AddUsersTab } from './tabs/AddUsersTab';
 import { GenerateInvoiceTab } from './tabs/GenerateInvoiceTab';
 import { UnassignedPaymentsHubTab } from './tabs/UnassignedPaymentsHubTab';
-import { TenantUnassignedPaymentsTab } from './tabs/TenantUnassignedPaymentsTab';
 import { SaaSUnassignedPaymentsTab } from './tabs/SaaSUnassignedPaymentsTab';
-import { supabase } from '@/lib/supabaseClient';
+import { TenantUnassignedPaymentsTab } from './tabs/TenantUnassignedPaymentsTab';
 
-export default function SuperAdminPage() {
-  const [activeTab, setActiveTab] = useState<SuperAdminTab>('dashboard');
-  const [adminFullName, setAdminFullName] = useState<string>('Brian Nyamai');
+// Technical & Governance Tabs
+import { SystemControlTab } from './tabs/SystemControlTab';
+import { WebhookDebuggerTab } from './tabs/WebhookDebuggerTab';
+import { ImpersonatorTab } from './tabs/ImpersonatorTab';
+import { AuditLogsTab } from './tabs/AuditLogsTab';
+import { FeatureFlagsTab } from './tabs/FeatureFlagsTab';
 
-  useEffect(() => {
-    async function fetchProfile() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
-          .single();
+export default function SuperadminPage() {
+  const [activeTab, setActiveTab] = useState<SuperadminTab>('dashboard');
 
-        if (data?.full_name) {
-          setAdminFullName(data.full_name);
-        }
-      }
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      // Operations & Business
+      case 'dashboard':
+        return <DashboardTab />;
+      case 'subscribers':
+        return <SubscribersTab />;
+      case 'add-users':
+        return <AddUsersTab />;
+      case 'generate-invoice':
+        return <GenerateInvoiceTab />;
+
+      // Reconciliation Hubs
+      case 'unassigned-payments-hub':
+        return <UnassignedPaymentsHubTab setActiveTab={setActiveTab} />;
+      case 'saas-unassigned-payments':
+        return <SaaSUnassignedPaymentsTab setActiveTab={setActiveTab} />;
+      case 'tenant-unassigned-payments':
+        return <TenantUnassignedPaymentsTab setActiveTab={setActiveTab} />;
+
+      // Developer Controls
+      case 'system-control':
+        return <SystemControlTab />;
+      case 'webhook-debugger':
+        return <WebhookDebuggerTab />;
+      case 'impersonator':
+        return <ImpersonatorTab />;
+
+      // Governance
+      case 'audit-logs':
+        return <AuditLogsTab />;
+      case 'feature-flags':
+        return <FeatureFlagsTab />;
+
+      default:
+        return <DashboardTab />;
     }
-    fetchProfile();
-  }, []);
+  };
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      {/* 1. SIDEBAR MENU */}
+    <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-
-      {/* 2. MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* HEADER */}
-        <Header fullName={adminFullName} />
-
-        {/* TAB ROUTING AREA */}
-        <main className="flex-1 overflow-y-auto p-6">
-          {activeTab === 'dashboard' && <DashboardTab />}
-          {activeTab === 'subscribers' && <SubscribersTab />}
-          {activeTab === 'generate-invoice' && <GenerateInvoiceTab />}
-          {activeTab === 'add-users' && <AddUsersTab />}
-          {activeTab === 'unassigned-payments' && (
-            <UnassignedPaymentsHubTab setActiveTab={setActiveTab} />
-          )}
-          {activeTab === 'unassigned-tenant-payments' && (
-            <TenantUnassignedPaymentsTab setActiveTab={setActiveTab} />
-          )}
-          {activeTab === 'unassigned-saas-payments' && (
-            <SaaSUnassignedPaymentsTab setActiveTab={setActiveTab} />
-          )}
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <main className="flex-1 overflow-y-auto p-6 md:p-8 max-w-7xl mx-auto w-full">
+          {renderActiveTab()}
         </main>
       </div>
     </div>

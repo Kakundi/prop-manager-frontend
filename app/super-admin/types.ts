@@ -1,41 +1,38 @@
-export type SuperAdminTab =
+// app/super-admin/types.ts
+
+export type SuperadminTab = 
+  // Business & SaaS Operations
   | 'dashboard'
-  | 'add-users'
-  | 'unassigned-payments'
-  | 'unassigned-tenant-payments'
-  | 'unassigned-saas-payments'
   | 'subscribers'
-  | 'generate-invoice';
+  | 'add-users'
+  | 'generate-invoice'
+  // Reconciliation Hubs
+  | 'unassigned-payments-hub'
+  | 'saas-unassigned-payments'
+  | 'tenant-unassigned-payments'
+  // Technical & Developer Controls
+  | 'system-control'
+  | 'webhook-debugger'
+  | 'impersonator'
+  // Governance & Feature Control
+  | 'audit-logs'
+  | 'feature-flags';
 
-export interface InvoiceMetrics {
-  paidAmount: number;
-  paidCount: number;
-  unpaidAmount: number;
-  unpaidCount: number;
-  overdueAmount: number;
-  overdueCount: number;
+export interface Subscriber {
+  id: string;
+  agency_name: string;
+  contact_email: string;
+  phone: string;
+  plan: 'starter' | 'growth' | 'enterprise';
+  status: 'active' | 'suspended' | 'past_due';
 }
 
-export interface SaaSPayment {
+export interface FailedWebhook {
   id: string;
-  transaction_code: string;
-  amount: number;
+  source: 'mpesa_c2b' | 'mpesa_stk' | 'whatsapp' | 'sms';
+  endpoint: string;
+  payload: Record<string, any>;
+  error_message: string;
+  retry_count: number;
   created_at: string;
-  sender_name: string | null;
-  sender_phone: string | null;
-  payment_method: string;
-  status: string;
-  notes: string | null;
-}
-
-export interface TenantPayment {
-  id: string;
-  transaction_code: string;
-  amount: number;
-  payment_date: string;
-  sender_phone: string | null;
-  tenant_full_name: string | null;
-  unit_name: string | null;
-  property_name: string | null;
-  status: string;
 }
