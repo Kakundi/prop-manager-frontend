@@ -42,6 +42,16 @@ export interface DirectoryUser {
   created_at: string;
 }
 
+// Helper to generate a clean, human-readable temporary password (e.g. PM-8A2K9X)
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let randomStr = '';
+  for (let i = 0; i < 6; i++) {
+    randomStr += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `PM-${randomStr}`;
+}
+
 // ==========================================
 // 1. GET HANDLER: Fetch Directory
 // ==========================================
@@ -72,7 +82,9 @@ export async function GET() {
     // Initialize Admin Client (uses SUPABASE_SERVICE_ROLE_KEY)
     const admin = getSupabaseAdmin();
     if (!admin) {
-      console.error('[GET_USERS_DIRECTORY_ERROR] Service Role Admin Client is missing or unconfigured. Verify SUPABASE_SERVICE_ROLE_KEY env variable.');
+      console.error(
+        '[GET_USERS_DIRECTORY_ERROR] Service Role Admin Client is missing or unconfigured. Verify SUPABASE_SERVICE_ROLE_KEY env variable.'
+      );
       return NextResponse.json(
         { error: 'Server configuration error: Service role key missing.' },
         { status: 500 }
@@ -181,7 +193,9 @@ export async function GET() {
           email: prof.email || 'N/A',
           phone: prof.phone || prof.phone_number || 'N/A',
           role: prof.role || 'tenant',
-          property_name: tenant.property_id ? propertyMap.get(tenant.property_id) || 'N/A' : 'N/A',
+          property_name: tenant.property_id
+            ? propertyMap.get(tenant.property_id) || 'N/A'
+            : 'N/A',
           unit_number: tenant.unit_id ? unitMap.get(tenant.unit_id) || 'N/A' : 'N/A',
           created_at: tenant.created_at || new Date().toISOString(),
         });
@@ -220,13 +234,16 @@ export async function GET() {
 }
 
 // ==========================================
-// 2. POST HANDLER: Invite & Add User
+// 2. POST HANDLER: Create & Activate User
 // ==========================================
 export async function POST(request: Request) {
   try {
     const supabase = await createServerSupabaseClient();
     if (!supabase) {
-      return NextResponse.json({ error: 'Session initialization failed.' }, { status: 500 });
+      return NextResponse.json(
+        { error: 'Session initialization failed.' },
+        { status: 500 }
+      );
     }
 
     const {
@@ -271,7 +288,10 @@ export async function POST(request: Request) {
       dbRole = 'tenant';
     } else if (roleLower === 'caretaker') {
       dbRole = 'caretaker';
-    } else if (roleLower === 'property manager' || roleLower === 'property_manager') {
+    } else if (
+      roleLower === 'property manager' ||
+      roleLower === 'property_manager'
+    ) {
       dbRole = 'property_manager';
     } else {
       dbRole = roleLower.replace(/\s+/g, '_');
@@ -280,7 +300,10 @@ export async function POST(request: Request) {
     // 3. Resolve Unit UUID from unit display string (e.g. "Unit A-101" -> UUID)
     let resolvedUnitId: string | null = null;
     if (rawUnitInput && rawUnitInput !== 'N/A' && !rawUnitInput.includes('N/A')) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawUnitInput);
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          rawUnitInput
+        );
 
       if (isUuid) {
         resolvedUnitId = rawUnitInput;
@@ -304,40 +327,41 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. Send Supabase Auth Invite Email with dynamic domain fallback
-    const rawBaseUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      process.env.APP_URL ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+    // 4. Create fully activated Supabase Auth user directly with a temporary password
+    const tempPassword = generateTempPassword();
 
-    const cleanBaseUrl = rawBaseUrl.replace(/\/$/, '');
-
-    // Explicitly target /auth/callback with destination set to /auth/accept-invite
-    const redirectUrl = `${cleanBaseUrl}/auth/callback?next=/auth/accept-invite`;
-
-    const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
-      email,
+    const { data: userData, error: createError } = await admin.auth.admin.createUser(
       {
-        data: { full_name: fullName, role: dbRole },
-        redirectTo: redirectUrl,
+        email,
+        password: tempPassword,
+        email_confirm: true, // Auto-confirm account bypassing email links
+        user_metadata: {
+          full_name: fullName,
+          role: dbRole,
+          must_change_password: true,
+        },
       }
     );
 
-    if (inviteError) {
-      console.error('[INVITE_USER_ERROR]', inviteError.message);
-      return NextResponse.json({ error: inviteError.message }, { status: 400 });
+    if (createError || !userData.user) {
+      console.error('[CREATE_USER_ERROR]', createError?.message);
+      return NextResponse.json(
+        { error: createError?.message || 'Failed to create user.' },
+        { status: 400 }
+      );
     }
 
-    const newUserId = inviteData.user.id;
+    const newUserId = userData.user.id;
 
-    // 5. Insert or update record in public.profiles with strictly lowercase enum value
+    // 5. Upsert record in public.profiles marking account active and setting must_change_password
     const { error: profileError } = await admin.from('profiles').upsert({
       id: newUserId,
       full_name: fullName,
       email: email,
       phone: phone,
       role: dbRole,
+      status: 'active',
+      must_change_password: true,
       created_at: new Date().toISOString(),
     });
 
@@ -384,15 +408,20 @@ export async function POST(request: Request) {
       }
     }
 
+    // 7. Return temporary password so UI can display it or send via SMS
     return NextResponse.json(
-      { message: 'User invited and assigned successfully!', user: inviteData.user },
+      {
+        message: 'User account created and activated successfully!',
+        tempPassword,
+        user: userData.user,
+      },
       { status: 201 }
     );
   } catch (error: unknown) {
     const err = error as Error;
     console.error('[POST_USERS_DIRECTORY_ERROR]', err.message);
     return NextResponse.json(
-      { error: err.message || 'Failed to add and invite user.' },
+      { error: err.message || 'Failed to add user.' },
       { status: 500 }
     );
   }

@@ -7,10 +7,10 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type') as EmailOtpType | null;
-  const next = searchParams.get('next') ?? '/auth/accept-invite';
+  const next = searchParams.get('next') ?? '/dashboard';
 
-  const redirectTo = `${origin}${next}`;
-  const response = NextResponse.redirect(redirectTo);
+  let targetUrl = `${origin}${next}`;
+  let response = NextResponse.redirect(targetUrl);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,8 +21,11 @@ export async function GET(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
+          cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value);
+          });
+          response = NextResponse.redirect(targetUrl);
+          cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options);
           });
         },
@@ -33,26 +36,42 @@ export async function GET(request: NextRequest) {
   // 1. PKCE Code Exchange
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return response;
+    if (error) {
+      console.error('[CALLBACK_CODE_ERROR]', error.message);
+      return NextResponse.redirect(`${origin}/login?error=invalid_link`);
     }
-    console.error('[CALLBACK_CODE_ERROR]', error.message);
-    return NextResponse.redirect(`${origin}/login?error=invalid_link`);
-  }
-
-  // 2. Token Hash / OTP Verification
-  if (token_hash && type) {
+  } else if (token_hash && type) {
+    // 2. Token Hash / OTP Verification
     const { error } = await supabase.auth.verifyOtp({
       type,
       token_hash,
     });
-    if (!error) {
-      return response;
+    if (error) {
+      console.error('[CALLBACK_VERIFY_OTP_ERROR]', error.message);
+      return NextResponse.redirect(`${origin}/login?error=invalid_link`);
     }
-    console.error('[CALLBACK_VERIFY_OTP_ERROR]', error.message);
-    return NextResponse.redirect(`${origin}/login?error=invalid_link`);
   }
 
-  // 3. Direct Redirect (preserves URL hash fragments like #access_token=... for client-side parsing)
+  // 3. Temporary Password / Password Change Verification
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    // Check user_metadata flag
+    const mustChangePassword = user.user_metadata?.must_change_password === true;
+
+    if (mustChangePassword) {
+      const redirectResponse = NextResponse.redirect(`${origin}/auth/update-password`);
+      
+      // Preserve session cookies set during exchange/verification
+      response.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie);
+      });
+
+      return redirectResponse;
+    }
+  }
+
   return response;
 }
