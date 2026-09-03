@@ -31,42 +31,38 @@ function AcceptInviteForm() {
       return;
     }
 
-    // 1. Listen for auth state changes (handles URL hash fragments & session hydration)
+    // 1. Listen for Supabase parsing the implicit invite access_token from the URL hash
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setUserEmail(session.user.email ?? null);
         setPageError(null);
+        setInitLoading(false);
       }
-      setInitLoading(false);
     });
 
-    // 2. Direct session check fallback
-    async function checkUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    // 2. Fallback check for session initialization
+    async function initializeInvite() {
+      const hasHash = typeof window !== 'undefined' && window.location.hash.includes('access_token');
 
-      if (user) {
-        setUserEmail(user.email ?? null);
-        setPageError(null);
-        setInitLoading(false);
-      } else {
-        // Allow time for client SDK hash-parsing before showing error
-        setTimeout(async () => {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          if (!session?.user) {
-            setPageError('Invalid or expired invitation link. Please request a new invite.');
-          }
-          setInitLoading(false);
-        }, 1200);
+      // If URL hash exists, let onAuthStateChange handle hydration
+      if (hasHash) {
+        return;
       }
+
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        setUserEmail(session.user.email ?? null);
+        setPageError(null);
+      } else {
+        setPageError('Invalid or expired invitation link. Please request a new invite.');
+      }
+      setInitLoading(false);
     }
 
-    checkUser();
+    initializeInvite();
 
     return () => {
       subscription.unsubscribe();
@@ -89,11 +85,8 @@ function AcceptInviteForm() {
 
     setLoading(true);
 
-    // 1. Update the password in Supabase Auth
-    const {
-      data: { user },
-      error: updateError,
-    } = await supabase.auth.updateUser({
+    // Update password for the invited user session
+    const { data: { user }, error: updateError } = await supabase.auth.updateUser({
       password,
     });
 
@@ -103,16 +96,16 @@ function AcceptInviteForm() {
       return;
     }
 
-    // 2. Mark profile status as active
+    // Activate the user profile in the database
     await supabase
       .from('profiles')
       .update({ status: 'active' })
       .eq('id', user.id);
 
-    // 3. Sign out session so user must log in manually
+    // Sign out session so the user starts with a clean sign-in
     await supabase.auth.signOut();
 
-    // 4. Redirect to Sign-In page with a success message
+    // Redirect to login
     router.push('/login?message=Account activated! Please sign in with your new password.');
   };
 
