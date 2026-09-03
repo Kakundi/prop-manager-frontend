@@ -18,6 +18,9 @@ export type SuperadminTab =
   | 'audit-logs'
   | 'feature-flags';
 
+// Export casing alias for compatibility across tabs
+export type SuperAdminTab = SuperadminTab;
+
 export interface InvoiceMetrics {
   totalAmount: number;
   paidAmount: number;
@@ -38,6 +41,32 @@ export interface Subscriber {
   plan: 'starter' | 'growth' | 'enterprise';
   status: 'active' | 'suspended' | 'past_due';
   created_at?: string;
+}
+
+export interface SaaSPayment {
+  id: string;
+  amount: number;
+  mpesa_code?: string;
+  phone_number?: string;
+  payer_name?: string;
+  agency_id?: string;
+  agency_name?: string;
+  status: 'unassigned' | 'matched' | 'resolved' | 'pending';
+  created_at: string;
+  raw_payload?: Record<string, any>;
+}
+
+export interface TenantPayment {
+  id: string;
+  amount: number;
+  mpesa_code?: string;
+  phone_number?: string;
+  tenant_name?: string;
+  property_name?: string;
+  unit_number?: string;
+  status: 'unassigned' | 'matched' | 'resolved' | 'pending';
+  created_at: string;
+  raw_payload?: Record<string, any>;
 }
 
 export interface FailedWebhook {
