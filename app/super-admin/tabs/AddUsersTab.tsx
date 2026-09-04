@@ -1,137 +1,134 @@
 'use client';
 
 import React, { useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 export const AddUsersTab: React.FC = () => {
-  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('property_manager');
+  const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState('developer');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  // Exact strings matching your Supabase ENUM values
+  const availableRoles = [
+    { value: 'developer', label: 'Developer (Technical & System Controls)', badge: 'Tech' },
+    { value: 'accountant', label: 'Accountant (Financials & Reconciliation)', badge: 'Finance' },
+    { value: 'super-admin', label: 'Super Admin (Full Platform Control)', badge: 'Admin' },
+    { value: 'property-manager', label: 'Property Manager', badge: 'Management' },
+    { value: 'admin', label: 'Admin', badge: 'Admin' },
+    { value: 'owner', label: 'Property Owner', badge: 'Client' },
+    { value: 'caretaker', label: 'Caretaker', badge: 'Staff' },
+    { value: 'tenant', label: 'Tenant', badge: 'Client' },
+  ];
+
+  async function handleInviteUser(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
 
     try {
-      const res = await fetch('/api/admin/invite-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName, email, phone, role }),
-      });
+      const { data, error } = await supabase.from('profiles').insert([
+        {
+          email,
+          full_name: fullName,
+          role,
+          created_at: new Date().toISOString(),
+        },
+      ]);
 
-      const result = await res.json();
+      if (error) throw error;
 
-      if (!res.ok) throw new Error(result.error || 'Failed to send invite email.');
-
-      setMessage({
-        type: 'success',
-        text: `Verification and password creation link successfully sent to ${email}`,
-      });
-      setFullName('');
+      setMessage({ type: 'success', text: `User successfully onboarded as ${role}!` });
       setEmail('');
-      setPhone('');
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'An error occurred while inviting the user.';
-      setMessage({ type: 'error', text: errorMsg });
+      setFullName('');
+      setRole('developer');
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Failed to onboard user.' });
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">ADD USERS</h1>
+        <h1 className="text-2xl font-bold text-white tracking-tight">User Onboarding</h1>
         <p className="text-xs text-slate-400 mt-1">
-          Add new system users, assign roles, and trigger automated verification email invites.
+          Invite team members and assign operational system roles.
         </p>
       </div>
 
-      <div className="max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         {message && (
           <div
-            className={`p-4 rounded-xl text-xs mb-6 ${
+            className={`p-4 rounded-xl text-xs font-medium mb-6 flex items-center justify-between ${
               message.type === 'success'
                 ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
                 : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
             }`}
           >
-            {message.text}
+            <span>{message.text}</span>
+            <button onClick={() => setMessage(null)} className="opacity-60 hover:opacity-100">
+              &times;
+            </button>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Full Name
-              </label>
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="John Doe"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Email Address
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="subscriber@example.com"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-              />
-            </div>
+        <form onSubmit={handleInviteUser} className="space-y-5 text-xs">
+          <div>
+            <label className="block font-medium text-slate-300 mb-1.5">Full Name</label>
+            <input
+              type="text"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="e.g. Jane Doe"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
+            />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                Phone Number
-              </label>
-              <input
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+254 7XX XXX XXX"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-              />
-            </div>
+          <div>
+            <label className="block font-medium text-slate-300 mb-1.5">Email Address</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="jane@example.com"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
+            />
+          </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1">
-                System Role
-              </label>
+          <div>
+            <label className="block font-medium text-slate-300 mb-1.5">System Role</label>
+            <div className="relative">
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition appearance-none cursor-pointer"
               >
-                <option value="property_manager">Property Manager</option>
-                <option value="property_owner">Property Owner</option>
-                <option value="caretaker">Caretaker</option>
-                <option value="tenant">Tenant</option>
+                {availableRoles.map((r) => (
+                  <option key={r.value} value={r.value} className="bg-slate-900 text-white">
+                    [{r.badge}] {r.label}
+                  </option>
+                ))}
               </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+                &#9660;
+              </div>
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-3 rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50"
-          >
-            {loading ? 'Sending Verification Link...' : 'Send Verification & Invite Email'}
-          </button>
+          <div className="pt-3">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-4 rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+            >
+              {loading ? 'Sending Invitation...' : 'Send Invitation & Create Profile'}
+            </button>
+          </div>
         </form>
       </div>
     </div>
