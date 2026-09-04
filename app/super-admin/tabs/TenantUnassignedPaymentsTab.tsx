@@ -42,7 +42,9 @@ export const TenantUnassignedPaymentsTab: React.FC<Props> = ({ setActiveTab }) =
         payment_date: item.created_at,
         sender_phone: item.sender_phone,
         tenant_name: item.tenant?.full_name || 'Unidentified Tenant',
+        tenant_full_name: item.tenant?.full_name || 'Unidentified Tenant',
         unit_name: item.unit?.unit_number ? `Unit ${item.unit.unit_number}` : 'N/A',
+        unit_number: item.unit?.unit_number || 'N/A',
         property_name: item.unit?.property?.name || 'Unlinked Property',
         status: item.status,
       }));
@@ -106,9 +108,11 @@ export const TenantUnassignedPaymentsTab: React.FC<Props> = ({ setActiveTab }) =
                   payments.map((pay) => (
                     <tr key={pay.id} className="hover:bg-slate-800/40">
                       <td className="py-3.5 px-4 font-semibold text-white">
-                        {pay.tenant_name}
+                        {pay.tenant_full_name || pay.tenant_name || 'Unidentified Tenant'}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-indigo-300">{pay.unit_name}</td>
+                      <td className="py-3.5 px-4 font-mono text-indigo-300">
+                        {pay.unit_name || pay.unit_number || 'N/A'}
+                      </td>
                       <td className="py-3.5 px-4">{pay.property_name}</td>
                       <td className="py-3.5 px-4 font-mono text-amber-400">
                         {pay.transaction_code}

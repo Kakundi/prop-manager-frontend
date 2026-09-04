@@ -11,6 +11,8 @@ export type SuperadminTab =
   | 'unassigned-payments-hub'
   | 'saas-unassigned-payments'
   | 'tenant-unassigned-payments'
+  | 'unassigned-saas-payments'
+  | 'unassigned-tenant-payments'
   // Technical & Developer Controls
   | 'system-control'
   | 'webhook-debugger'
@@ -20,6 +22,43 @@ export type SuperadminTab =
   | 'feature-flags';
 
 export type SuperAdminTab = SuperadminTab;
+
+export interface SaaSPayment {
+  id: string;
+  amount: number;
+  sender_name?: string;
+  sender_phone?: string;
+  transaction_code?: string;
+  payment_method?: string;
+  mpesa_code?: string;
+  phone_number?: string;
+  payer_name?: string;
+  agency_id?: string;
+  agency_name?: string;
+  status: 'unassigned' | 'matched' | 'resolved' | 'pending' | 'UNASSIGNED' | string;
+  created_at?: string;
+  raw_payload?: Record<string, any>;
+}
+
+export interface TenantPayment {
+  id: string;
+  amount: number;
+  sender_name?: string;
+  sender_phone?: string;
+  transaction_code?: string;
+  payment_method?: string;
+  mpesa_code?: string;
+  phone_number?: string;
+  tenant_name?: string;
+  tenant_full_name?: string;
+  property_name?: string;
+  unit_number?: string;
+  unit_name?: string;
+  payment_date?: string;
+  status: 'unassigned' | 'matched' | 'resolved' | 'pending' | 'UNASSIGNED' | string;
+  created_at?: string;
+  raw_payload?: Record<string, any>;
+}
 
 export interface InvoiceMetrics {
   totalAmount: number;
@@ -41,40 +80,6 @@ export interface Subscriber {
   plan: 'starter' | 'growth' | 'enterprise';
   status: 'active' | 'suspended' | 'past_due';
   created_at?: string;
-}
-
-export interface SaaSPayment {
-  id: string;
-  amount: number;
-  sender_name?: string;
-  sender_phone?: string;
-  transaction_code?: string;
-  payment_method?: string;
-  mpesa_code?: string;
-  phone_number?: string;
-  payer_name?: string;
-  agency_id?: string;
-  agency_name?: string;
-  status: 'unassigned' | 'matched' | 'resolved' | 'pending' | 'UNASSIGNED';
-  created_at: string;
-  raw_payload?: Record<string, any>;
-}
-
-export interface TenantPayment {
-  id: string;
-  amount: number;
-  sender_name?: string;
-  sender_phone?: string;
-  transaction_code?: string;
-  payment_method?: string;
-  mpesa_code?: string;
-  phone_number?: string;
-  tenant_name?: string;
-  property_name?: string;
-  unit_number?: string;
-  status: 'unassigned' | 'matched' | 'resolved' | 'pending' | 'UNASSIGNED';
-  created_at: string;
-  raw_payload?: Record<string, any>;
 }
 
 export interface FailedWebhook {
