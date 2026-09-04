@@ -97,7 +97,7 @@ export const SaaSUnassignedPaymentsTab: React.FC<Props> = ({ setActiveTab }) => 
                         KES {pay.amount.toLocaleString()}
                       </td>
                       <td className="py-3.5 px-4 text-slate-400 text-xs">
-                        {new Date(pay.created_at).toLocaleDateString()}
+                        {pay.created_at ? new Date(pay.created_at).toLocaleDateString() : 'N/A'}
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <button className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-1.5 rounded-lg transition">

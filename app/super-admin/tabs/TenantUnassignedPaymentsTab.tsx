@@ -34,10 +34,11 @@ export const TenantUnassignedPaymentsTab: React.FC<Props> = ({ setActiveTab }) =
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      const formatted = data.map((item: any) => ({
+      const formatted: TenantPayment[] = data.map((item: any) => ({
         id: item.id,
         transaction_code: item.transaction_code,
         amount: item.amount,
+        created_at: item.created_at,
         payment_date: item.created_at,
         sender_phone: item.sender_phone,
         tenant_full_name: item.tenant?.full_name || 'Unidentified Tenant',
@@ -56,7 +57,7 @@ export const TenantUnassignedPaymentsTab: React.FC<Props> = ({ setActiveTab }) =
         <div>
           <div className="flex items-center space-x-2 text-xs text-slate-400 mb-1">
             <button
-              onClick={() => setActiveTab('unassigned-payments')}
+              onClick={() => setActiveTab('unassigned-payments-hub')}
               className="hover:text-slate-200"
             >
               Unassigned Payments
@@ -117,7 +118,7 @@ export const TenantUnassignedPaymentsTab: React.FC<Props> = ({ setActiveTab }) =
                         KES {pay.amount.toLocaleString()}
                       </td>
                       <td className="py-3.5 px-4 text-slate-400 text-xs">
-                        {new Date(pay.payment_date).toLocaleDateString()}
+                        {pay.payment_date ? new Date(pay.payment_date).toLocaleDateString() : 'N/A'}
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg transition">
