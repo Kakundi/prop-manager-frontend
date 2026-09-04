@@ -7,6 +7,7 @@ export type SuperadminTab =
   | 'add-users'
   | 'generate-invoice'
   // Reconciliation Hubs
+  | 'unassigned-payments'
   | 'unassigned-payments-hub'
   | 'saas-unassigned-payments'
   | 'tenant-unassigned-payments'
@@ -18,7 +19,6 @@ export type SuperadminTab =
   | 'audit-logs'
   | 'feature-flags';
 
-// Export casing alias for compatibility across tabs
 export type SuperAdminTab = SuperadminTab;
 
 export interface InvoiceMetrics {
@@ -46,12 +46,16 @@ export interface Subscriber {
 export interface SaaSPayment {
   id: string;
   amount: number;
+  sender_name?: string;
+  sender_phone?: string;
+  transaction_code?: string;
+  payment_method?: string;
   mpesa_code?: string;
   phone_number?: string;
   payer_name?: string;
   agency_id?: string;
   agency_name?: string;
-  status: 'unassigned' | 'matched' | 'resolved' | 'pending';
+  status: 'unassigned' | 'matched' | 'resolved' | 'pending' | 'UNASSIGNED';
   created_at: string;
   raw_payload?: Record<string, any>;
 }
@@ -59,12 +63,16 @@ export interface SaaSPayment {
 export interface TenantPayment {
   id: string;
   amount: number;
+  sender_name?: string;
+  sender_phone?: string;
+  transaction_code?: string;
+  payment_method?: string;
   mpesa_code?: string;
   phone_number?: string;
   tenant_name?: string;
   property_name?: string;
   unit_number?: string;
-  status: 'unassigned' | 'matched' | 'resolved' | 'pending';
+  status: 'unassigned' | 'matched' | 'resolved' | 'pending' | 'UNASSIGNED';
   created_at: string;
   raw_payload?: Record<string, any>;
 }
