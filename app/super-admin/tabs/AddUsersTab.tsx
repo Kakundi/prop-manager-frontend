@@ -10,7 +10,6 @@ export const AddUsersTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Exact strings matching your Supabase ENUM values
   const availableRoles = [
     { value: 'developer', label: 'Developer (Technical & System Controls)', badge: 'Tech' },
     { value: 'accountant', label: 'Accountant (Financials & Reconciliation)', badge: 'Finance' },
@@ -53,13 +52,13 @@ export const AddUsersTab: React.FC = () => {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">User Onboarding</h1>
-        <p className="text-xs text-slate-400 mt-1">
+        <h1 className="text-3xl font-extrabold text-white tracking-tight">User Onboarding</h1>
+        <p className="text-sm text-slate-300 mt-1 font-medium">
           Invite team members and assign operational system roles.
         </p>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl">
         {message && (
           <div
             className={`p-4 rounded-xl text-xs font-medium mb-6 flex items-center justify-between ${
@@ -77,36 +76,36 @@ export const AddUsersTab: React.FC = () => {
 
         <form onSubmit={handleInviteUser} className="space-y-5 text-xs">
           <div>
-            <label className="block font-medium text-slate-300 mb-1.5">Full Name</label>
+            <label className="block font-semibold text-slate-200 mb-2">Full Name</label>
             <input
               type="text"
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="e.g. Jane Doe"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
             />
           </div>
 
           <div>
-            <label className="block font-medium text-slate-300 mb-1.5">Email Address</label>
+            <label className="block font-semibold text-slate-200 mb-2">Email Address</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="jane@example.com"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
             />
           </div>
 
           <div>
-            <label className="block font-medium text-slate-300 mb-1.5">System Role</label>
+            <label className="block font-semibold text-slate-200 mb-2">System Role</label>
             <div className="relative">
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition appearance-none cursor-pointer"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition appearance-none cursor-pointer"
               >
                 {availableRoles.map((r) => (
                   <option key={r.value} value={r.value} className="bg-slate-900 text-white">
@@ -120,11 +119,11 @@ export const AddUsersTab: React.FC = () => {
             </div>
           </div>
 
-          <div className="pt-3">
+          <div className="pt-4">
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-4 rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3.5 px-4 rounded-xl transition shadow-lg shadow-indigo-600/25 active:scale-[0.99] disabled:opacity-50"
             >
               {loading ? 'Sending Invitation...' : 'Send Invitation & Create Profile'}
             </button>
