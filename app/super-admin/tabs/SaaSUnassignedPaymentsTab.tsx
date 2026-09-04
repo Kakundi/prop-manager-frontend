@@ -36,7 +36,7 @@ export const SaaSUnassignedPaymentsTab: React.FC<Props> = ({ setActiveTab }) => 
         <div>
           <div className="flex items-center space-x-2 text-xs text-slate-400 mb-1">
             <button
-              onClick={() => setActiveTab('unassigned-payments')}
+              onClick={() => setActiveTab('unassigned-payments-hub')}
               className="hover:text-slate-200"
             >
               Unassigned Payments
@@ -58,7 +58,9 @@ export const SaaSUnassignedPaymentsTab: React.FC<Props> = ({ setActiveTab }) => 
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         {loading ? (
-          <div className="p-12 text-center text-slate-500 text-sm">Loading subscriber records...</div>
+          <div className="p-12 text-center text-slate-500 text-sm">
+            Loading subscriber records...
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
